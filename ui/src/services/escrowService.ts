@@ -57,13 +57,13 @@ export class EscrowClientService {
       throw new Error("Compact Assert: Max budget must be greater than zero");
     }
 
-    // Simulate ZK proof generation & commitment hash
-    const fakeCommitment = `0xcreator_${Math.abs(this.hashCode(params.creatorSecret)).toString(16).padStart(16, "0")}`;
+    // Local simulated witness commitment for development testbed
+    const simulatedCommitment = `0xcreator_${Math.abs(this.hashCode(params.creatorSecret)).toString(16).padStart(16, "0")}`;
 
     this.state = {
       ...this.state,
       taskId: params.taskId || `0xtask_${Date.now().toString(16)}`,
-      creatorCommitment: fakeCommitment,
+      creatorCommitment: simulatedCommitment,
       agentCommitment: params.agentCommitment || "0xagent_a4f92d8b100c59e7",
       maxBudget: params.maxBudget,
       conditionHash: params.conditionHash || "0xcond_sha256_verification_spec_001",

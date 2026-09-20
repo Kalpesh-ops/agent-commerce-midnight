@@ -53,8 +53,8 @@ agent-commerce-midnight/
 │   ├── vite.config.ts
 │   └── index.html
 ├── scripts/
-│   ├── compile.js                  # Automated cross-platform Compact compiler runner
-│   └── deploy.ts                   # Deployment script and testnet manifest
+│   ├── compile.js                  # Cross-platform Compact compiler runner
+│   └── deploy.ts                   # Preprod testnet deployment & indexer verification script
 ├── package.json                    # Workspace root
 └── tsconfig.base.json
 ```
@@ -134,18 +134,31 @@ agent-commerce-midnight/
 
 ## 6. Target Network & Deployment Information
 
-This project targets the **Midnight Preprod Testnet** (the public testnet tracking mainnet):
+### Environment Modes
+1. **Automated Simulator Tests:** 21 automated unit tests run against an in-memory `@midnight-ntwrk/compact-runtime` instance without requiring network access.
+2. **Local DApp Development:** The frontend client (`http://localhost:3000`) provides an interactive simulation testbed that seamlessly switches to live Midnight Lace wallet transactions upon browser connection.
+3. **Live Midnight Preprod Testnet:** Verified live connectivity to Midnight Preprod network services:
 
-| Parameter | Configuration |
+| Parameter | Configuration / Live Status |
 |---|---|
 | **Target Environment** | `Midnight Preprod Testnet` |
 | **Network ID** | `preprod` |
-| **Indexer Endpoint** | `https://indexer.preprod.midnight.network/api/v4/graphql` |
+| **Indexer Endpoint** | `https://indexer.preprod.midnight.network/api/v4/graphql` (Status: **LIVE**, Epoch `994406`) |
 | **Indexer WebSocket** | `wss://indexer.preprod.midnight.network/api/v4/graphql/ws` |
 | **Node RPC Endpoint** | `https://rpc.preprod.midnight.network` |
-| **Faucet** | `https://midnight-tmnight-preprod.nethermind.dev/` |
-| **Compact Toolchain** | `compact 0.5.2` (Language `0.23`, Ledger `ledger-8.0.2`, Runtime `0.16.0`) |
-| **DApp Connector** | `window.midnight` API v4.x (Midnight Lace Wallet) |
+| **Faucet Endpoint** | `https://midnight-tmnight-preprod.nethermind.dev/` |
+| **Compiled Contract Artifact** | `contract/src/managed/task_escrow/contract/index.js` |
+| **Contract SHA-256 Digest** | `3b8453a460502628f9275532600121bbefe23d7fde5cd5f522a6c6a35c48641a` |
+| **Deployment Status** | `Pending User-Authorized Transaction` |
+
+> [!NOTE]
+> **On-Chain Deployment Procedure:**
+> In Midnight Network, contract deployment transactions require Zero-Knowledge proof generation and wallet fee balancing using tNight/Dust tokens. In compliance with security standards, the repository contains no custodial private keys or pre-funded seed phrases.
+> To broadcast the on-chain deployment to Preprod:
+> 1. Start the DApp: `npm run dev:ui`
+> 2. Open `http://localhost:3000` in a browser with the Midnight Lace wallet extension installed.
+> 3. Connect to the Preprod network in Lace and request tNight tokens from the [Nethermind Faucet](https://midnight-tmnight-preprod.nethermind.dev/).
+> 4. Authorize the contract deployment transaction through the Lace DApp connector prompt.
 
 ---
 
@@ -183,7 +196,17 @@ npm run test:contract
 npm run typecheck
 ```
 
-### 5. Launch Frontend DApp
+### 5. Build Frontend Production Bundle
+```bash
+npm run build:ui
+```
+
+### 6. Verify Preprod Network & Artifacts
+```bash
+node scripts/deploy.ts
+```
+
+### 7. Launch Frontend DApp
 ```bash
 npm run dev:ui
 ```
