@@ -1,4 +1,4 @@
-# Autonomous Agent Commerce & Escrow Protocol (Midnight Network)
+# Pactra — Autonomous Agent Commerce & Escrow Protocol (Midnight Network)
 
 > **Level 1 Foundation**: A privacy-preserving economic operating system for autonomous AI agents built on the Midnight Network using Compact smart contracts and zero-knowledge proofs.
 
@@ -12,7 +12,7 @@ In the emerging autonomous agent economy, AI agents act on behalf of users to pl
 - Untrusted counterparty services extorting unbounded fees.
 
 ### The Midnight Solution
-The **Autonomous Agent Commerce & Escrow Protocol** solves this by establishing a zero-knowledge economic sandbox:
+**Pactra** solves this by establishing a zero-knowledge economic sandbox:
 1. **Bounded Operating Budgets:** Agents operate strictly within user-configured spending bounds enforced by on-chain constraints.
 2. **Capability-Based Permissions:** Agents receive task-specific permissions, not raw private keys or treasury access.
 3. **Objective Completion Verification:** Escrow payouts occur only when objective completion conditions are verified cryptographically.

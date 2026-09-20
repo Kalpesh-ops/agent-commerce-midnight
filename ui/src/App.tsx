@@ -10,20 +10,13 @@ import { contractClient, TxLifecycleEvent } from "./services/contractClient";
 import { MidnightNetworkId } from "./types/midnight";
 
 export const App: React.FC = () => {
-  const [wallet, setWallet] = useState<WalletState>({
-    isInstalled: false,
-    isConnected: false,
-    networkId: "preprod",
-  });
-
-  const [escrowState, setEscrowState] = useState<EscrowContractData>(
-    escrowService.getState()
-  );
-
+  const [wallet, setWallet] = useState<WalletState>(walletService.getState());
+  const [escrowState, setEscrowState] = useState<EscrowContractData>(escrowService.getState());
   const [txLifecycle, setTxLifecycle] = useState<TxLifecycleEvent | null>(null);
+  const [isIndexerLive, setIsIndexerLive] = useState<boolean>(false);
 
   const [logs, setLogs] = useState<Array<{ text: string; type: "info" | "success" | "error" }>>([
-    { text: "Midnight Agent Commerce Protocol initialized.", type: "info" },
+    { text: "Pactra Agent Commerce & Escrow Protocol initialized.", type: "info" },
     { text: "Target Network: Midnight Preprod Testnet.", type: "info" },
   ]);
 
@@ -34,7 +27,29 @@ export const App: React.FC = () => {
     ]);
   }, []);
 
-  // Update lifecycle listener
+  // 1. Subscribe to deterministic Wallet Service state machine
+  useEffect(() => {
+    const unsubscribe = walletService.subscribe((updatedState) => {
+      setWallet(updatedState);
+      if (updatedState.status === "WALLET_DETECTED") {
+        addLog(`Midnight Lace connector detected (${updatedState.detectedWalletName || "Lace"}). Ready to connect.`, "info");
+      } else if (updatedState.status === "CONNECTED") {
+        addLog(`Lace wallet verified and connected on ${updatedState.activeNetwork || updatedState.networkId}.`, "success");
+      } else if (updatedState.status === "REJECTED") {
+        addLog("Wallet connection rejected by user in Lace popup.", "error");
+      } else if (updatedState.status === "TIMEOUT") {
+        addLog("Wallet authorization request timed out.", "error");
+      } else if (updatedState.status === "FAILED" && updatedState.error) {
+        addLog(`Wallet connection error: ${updatedState.error}`, "error");
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [addLog]);
+
+  // 2. Transaction lifecycle listener
   useEffect(() => {
     contractClient.setLifecycleListener((event) => {
       setTxLifecycle(event);
@@ -52,37 +67,34 @@ export const App: React.FC = () => {
     });
   }, [addLog]);
 
-  // Initial mount: check Lace extension and attempt to reconstruct state from Preprod Indexer
+  // 3. Preprod Indexer Health Verification
   useEffect(() => {
-    let found = walletService.isLaceInstalled();
-    setWallet((prev) => ({ ...prev, isInstalled: found }));
-    if (found) {
-      addLog("Midnight Lace wallet extension detected.", "success");
-    }
-
-    const interval = setInterval(() => {
-      if (!found && walletService.isLaceInstalled()) {
-        found = true;
-        setWallet((prev) => ({ ...prev, isInstalled: true }));
-        addLog("Midnight Lace wallet extension detected.", "success");
-        clearInterval(interval);
+    let isMounted = true;
+    const verifyIndexer = async () => {
+      try {
+        const res = await fetch("https://indexer.preprod.midnight.network/api/v4/graphql", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: "{ currentEpochInfo { epochNo } }" }),
+        });
+        const json = await res.json();
+        if (json?.data?.currentEpochInfo?.epochNo && isMounted) {
+          setIsIndexerLive(true);
+        }
+      } catch {
+        if (isMounted) setIsIndexerLive(false);
       }
-    }, 300);
-
-    const timer = setTimeout(() => {
-      clearInterval(interval);
-      if (!walletService.isLaceInstalled()) {
-        addLog("Midnight Lace wallet extension not detected (install extension or use offline demo mode).", "info");
-      }
-    }, 2400);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timer);
     };
-  }, [addLog]);
 
-  // Reconstruct state from saved deployed contract address if present
+    verifyIndexer();
+    const interval = setInterval(verifyIndexer, 20000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // 4. Reconstruct state from persisted contract address on mount
   useEffect(() => {
     const savedAddress = localStorage.getItem("midnight_task_escrow_contract_address");
     if (savedAddress) {
@@ -110,34 +122,42 @@ export const App: React.FC = () => {
   }, [addLog]);
 
   const handleConnectWallet = async () => {
+    if (wallet.status === "CONNECTING") {
+      return;
+    }
     addLog(`Initiating handshake with Midnight Lace on ${wallet.networkId}...`, "info");
     const res = await walletService.connect(wallet.networkId);
-    setWallet(res);
-    if (res.isConnected) {
+    if (res.status === "CONNECTED") {
       addLog(
         `Wallet connected successfully! Shielded Coin PK: ${res.coinPublicKey?.slice(0, 16)}...`,
         "success"
       );
-
-      // If we have an active contract, sync it
-      const currentAddr = contractClient.getActiveContractAddress();
+      const currentAddr = contractClient.getActiveContractAddress() || escrowState.contractAddress;
       if (currentAddr) {
         escrowService.setMode("live");
         handleRefreshIndexer();
       }
-    } else {
-      addLog(res.error || "Wallet connection cancelled or unavailable.", "error");
     }
   };
 
+  const handleDisconnectWallet = () => {
+    walletService.disconnect();
+    addLog("Lace wallet disconnected.", "info");
+  };
+
   const handleNetworkChange = (net: MidnightNetworkId) => {
-    setWallet((prev) => ({ ...prev, networkId: net, isConnected: false }));
+    setWallet((prev) => ({ ...prev, networkId: net }));
     addLog(`Switched network target to ${net}.`, "info");
+    if (wallet.isConnected) {
+      walletService.disconnect();
+      addLog("Disconnected wallet due to target network change. Please reconnect on the new network.", "info");
+    }
   };
 
   const handleDeployContract = async () => {
     try {
-      addLog("Deploying TaskEscrow Compact contract to Midnight Preprod...", "info");
+      addLog("Preparing TaskEscrow deployment on Midnight Preprod via Lace wallet...", "info");
+      addLog("Manual Action Required: Open your Midnight Lace extension window and approve the deployment transaction fee.", "info");
       const deployedAddress = await escrowService.deployOnPreprod((event) => {
         setTxLifecycle(event);
       });
@@ -272,10 +292,13 @@ export const App: React.FC = () => {
     addLog("Demo state reset to UNINITIALIZED.", "info");
   };
 
+  // Strict LIVE Mode Invariant: requires authenticated Lace + Preprod network + real contract + live indexer
   const isLive =
+    wallet.status === "CONNECTED" &&
+    wallet.networkId === "preprod" &&
+    Boolean(escrowState.contractAddress) &&
     escrowService.getMode() === "live" &&
-    wallet.isConnected &&
-    wallet.networkId === "preprod";
+    isIndexerLive;
 
   return (
     <div className="app-container">
@@ -284,6 +307,7 @@ export const App: React.FC = () => {
         isLiveMode={isLive}
         contractAddress={escrowState.contractAddress}
         onConnect={handleConnectWallet}
+        onDisconnect={handleDisconnectWallet}
         onNetworkChange={handleNetworkChange}
         onModeToggle={(mode) => {
           escrowService.setMode(mode);
@@ -295,8 +319,45 @@ export const App: React.FC = () => {
         }}
       />
 
+      {/* Wallet Error Diagnostic Banner */}
+      {wallet.error && wallet.status !== "CONNECTED" && (
+        <div
+          id="wallet-diagnostic-banner"
+          style={{
+            marginTop: "16px",
+            padding: "12px 16px",
+            background: "rgba(255, 51, 102, 0.12)",
+            border: "1px solid var(--crimson)",
+            borderRadius: "var(--radius-md)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "12px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "18px" }}>⚠️</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: "13px", color: "var(--crimson)" }}>
+                Wallet Connection Notice ({wallet.errorCode || wallet.status})
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--text-main)", marginTop: "2px" }}>
+                {wallet.error}
+              </div>
+            </div>
+          </div>
+          <button
+            className="btn-secondary"
+            style={{ padding: "6px 14px", fontSize: "12px", whiteSpace: "nowrap" }}
+            onClick={handleConnectWallet}
+          >
+            🔄 Retry Connect
+          </button>
+        </div>
+      )}
+
       <section className="vision-banner">
-        <h2>Autonomous Agent Commerce & Escrow Protocol</h2>
+        <h2>Pactra: Autonomous Agent Commerce & Escrow Protocol</h2>
         <p>
           A privacy-preserving economic operating system for autonomous AI agents on Midnight.
           AI agents operate with bounded budgets, capability-based permissions, and zero-knowledge proof verification.

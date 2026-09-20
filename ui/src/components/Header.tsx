@@ -7,6 +7,7 @@ interface HeaderProps {
   isLiveMode: boolean;
   contractAddress: string | null;
   onConnect: () => void;
+  onDisconnect?: () => void;
   onNetworkChange: (net: MidnightNetworkId) => void;
   onModeToggle: (mode: "live" | "demo") => void;
   onContractAddressChange: (addr: string) => void;
@@ -17,22 +18,25 @@ export const Header: React.FC<HeaderProps> = ({
   isLiveMode,
   contractAddress,
   onConnect,
+  onDisconnect,
   onNetworkChange,
   onModeToggle,
-  onContractAddressChange,
 }) => {
+  const isConnecting = wallet.status === "CONNECTING";
+  const isDetecting = wallet.status === "DETECTING";
+
   return (
     <header className="app-header">
       <div className="brand-section">
         <div className="brand-logo-icon">🌌</div>
         <div>
-          <h1 className="brand-title">Midnight Agent Commerce</h1>
-          <p className="brand-subtitle">Autonomous Escrow Protocol • Level 1</p>
+          <h1 className="brand-title">Pactra</h1>
+          <p className="brand-subtitle">Autonomous Agent Commerce & Escrow Protocol • Level 1</p>
         </div>
       </div>
 
       <div className="header-actions">
-        {/* Visual Badge distinguishing Live Preprod from Demo */}
+        {/* Visual Badge: strictly distinguishing Live Preprod from Demo */}
         {isLiveMode ? (
           <div
             id="badge-live-preprod"
@@ -60,6 +64,25 @@ export const Header: React.FC<HeaderProps> = ({
             ></span>
             LIVE PREPROD ON-CHAIN
           </div>
+        ) : wallet.isConnected && wallet.networkId === "preprod" && !contractAddress ? (
+          <div
+            id="badge-preprod-ready"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "6px 14px",
+              background: "rgba(0, 212, 255, 0.12)",
+              border: "1px solid var(--cyan)",
+              borderRadius: "var(--radius-full)",
+              fontSize: "12px",
+              fontWeight: 700,
+              color: "var(--cyan)",
+            }}
+          >
+            <span>🔗</span>
+            PREPROD (AWAITING DEPLOYMENT)
+          </div>
         ) : (
           <div
             id="badge-demo-mode"
@@ -81,10 +104,12 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         )}
 
+        {/* Network selector */}
         <div className="network-badge">
           <span className="network-indicator-dot"></span>
           <select
             value={wallet.networkId}
+            disabled={isConnecting}
             onChange={(e) => onNetworkChange(e.target.value as MidnightNetworkId)}
             style={{
               background: "transparent",
@@ -93,7 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
               fontFamily: "inherit",
               fontSize: "inherit",
               fontWeight: "inherit",
-              cursor: "pointer",
+              cursor: isConnecting ? "not-allowed" : "pointer",
               outline: "none",
             }}
           >
@@ -109,15 +134,51 @@ export const Header: React.FC<HeaderProps> = ({
           </select>
         </div>
 
+        {/* Deterministic Wallet Connection Controls */}
         {wallet.isConnected ? (
-          <button className="btn-secondary" title="Midnight Shielded Wallet Connected">
+          <button
+            className="btn-secondary"
+            title={`Shielded Coin PK: ${wallet.coinPublicKey || "N/A"}\nClick to disconnect`}
+            onClick={onDisconnect}
+          >
             <span style={{ color: "#00e699" }}>●</span>
             {wallet.coinPublicKey
               ? `${wallet.coinPublicKey.slice(0, 8)}...${wallet.coinPublicKey.slice(-6)}`
               : "Lace Connected"}
           </button>
+        ) : isConnecting ? (
+          <button
+            id="connect-wallet-btn"
+            className="btn-primary"
+            disabled
+            style={{ opacity: 0.75, cursor: "not-allowed" }}
+          >
+            <span>⏳</span> Authorizing in Lace...
+          </button>
+        ) : isDetecting ? (
+          <button
+            id="connect-wallet-btn"
+            className="btn-secondary"
+            disabled
+            style={{ opacity: 0.7, cursor: "wait" }}
+          >
+            <span>🔍</span> Detecting Lace...
+          </button>
+        ) : wallet.status === "FAILED" || wallet.status === "REJECTED" || wallet.status === "TIMEOUT" ? (
+          <button
+            id="connect-wallet-btn"
+            className="btn-primary"
+            onClick={onConnect}
+            title={wallet.error || "Retry connection"}
+          >
+            <span>🔄</span> Retry Connect
+          </button>
         ) : (
-          <button id="connect-wallet-btn" className="btn-primary" onClick={onConnect}>
+          <button
+            id="connect-wallet-btn"
+            className="btn-primary"
+            onClick={onConnect}
+          >
             <span>🔌</span> Connect Lace Wallet
           </button>
         )}
