@@ -1,3 +1,4 @@
+export * from "./cryptoUtils.js";
 export * from "./policy.js";
 export * from "./authority.js";
 export * from "./registry.js";

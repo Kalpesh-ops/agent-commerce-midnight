@@ -6,7 +6,7 @@
  * The agent may NEVER exceed these policy limits or obtain generic wallet custody.
  */
 
-import { createHash } from "node:crypto";
+import { sha256Hex } from "./cryptoUtils.js";
 
 export type AgentCapability =
   | "COMPUTE"
@@ -21,13 +21,13 @@ export const ALL_CAPABILITIES: readonly AgentCapability[] = [
   "API_CALL",
   "DEPLOYMENT",
   "DATA_PROCESSING",
-] as const;
+];
 
 export interface TaskPolicy {
   readonly taskId: string;
   readonly maxTotalBudget: bigint;
   readonly maxSpendPerTransaction: bigint;
-  readonly approvedCategories: readonly AgentCapability[];
+  readonly approvedCategories: readonly string[];
   readonly approvedProviders: readonly string[];
   readonly allowedCapabilities: readonly AgentCapability[];
   readonly expirationTimestamp: number;
@@ -35,21 +35,12 @@ export interface TaskPolicy {
   readonly salt: string;
 }
 
-export interface CreateTaskPolicyParams {
-  taskId: string;
-  maxTotalBudget: bigint | number;
-  maxSpendPerTransaction: bigint | number;
-  approvedCategories: AgentCapability[];
-  approvedProviders: string[];
-  allowedCapabilities: AgentCapability[];
-  expirationTimestamp?: number;
-  completionConditionCommitment: string;
-  salt?: string;
-}
-
 export class PolicyViolationError extends Error {
-  constructor(public readonly code: string, message: string) {
-    super(`[Pactra Policy Violation] ${code}: ${message}`);
+  constructor(
+    public readonly violationCode: string,
+    message: string
+  ) {
+    super(`[Pactra Policy Violation: ${violationCode}] ${message}`);
     this.name = "PolicyViolationError";
   }
 }
@@ -57,35 +48,53 @@ export class PolicyViolationError extends Error {
 /**
  * Validates and instantiates a cryptographic TaskPolicy.
  */
-export function createTaskPolicy(params: CreateTaskPolicyParams): TaskPolicy {
+export function createTaskPolicy(params: {
+  taskId: string;
+  maxTotalBudget: bigint | number;
+  maxSpendPerTransaction: bigint | number;
+  approvedCategories: string[];
+  approvedProviders: string[];
+  allowedCapabilities: AgentCapability[];
+  expirationTimestamp: number;
+  completionConditionCommitment: string;
+  salt?: string;
+}): TaskPolicy {
   const maxTotalBudget = BigInt(params.maxTotalBudget);
   const maxSpendPerTransaction = BigInt(params.maxSpendPerTransaction);
+  const expirationTimestamp = params.expirationTimestamp;
 
   if (maxTotalBudget <= 0n) {
-    throw new PolicyViolationError("INVALID_TOTAL_BUDGET", "Max total budget must be greater than zero.");
+    throw new PolicyViolationError("INVALID_TOTAL_BUDGET", "Max total budget must be strictly positive.");
   }
 
   if (maxSpendPerTransaction <= 0n) {
-    throw new PolicyViolationError("INVALID_TX_BUDGET", "Max spend per transaction must be greater than zero.");
+    throw new PolicyViolationError("INVALID_TX_LIMIT", "Max spend per transaction must be strictly positive.");
   }
 
   if (maxSpendPerTransaction > maxTotalBudget) {
     throw new PolicyViolationError(
       "PER_TX_EXCEEDS_TOTAL",
-      `Max spend per transaction (${maxSpendPerTransaction}) cannot exceed total budget (${maxTotalBudget}).`
+      "Max spend per transaction cannot exceed total task budget."
     );
   }
 
-  if (!params.allowedCapabilities || params.allowedCapabilities.length === 0) {
-    throw new PolicyViolationError("EMPTY_CAPABILITIES", "Task policy must specify at least one allowed capability.");
+  if (params.approvedCategories.length === 0) {
+    throw new PolicyViolationError("NO_APPROVED_CATEGORIES", "Policy must specify at least one approved service category.");
   }
 
-  const expirationTimestamp = params.expirationTimestamp ?? Date.now() + 86400 * 1000;
+  if (params.approvedProviders.length === 0) {
+    throw new PolicyViolationError("NO_APPROVED_PROVIDERS", "Policy must specify at least one approved provider commitment.");
+  }
+
+  if (params.allowedCapabilities.length === 0) {
+    throw new PolicyViolationError("NO_ALLOWED_CAPABILITIES", "Policy must authorize at least one capability.");
+  }
+
   if (expirationTimestamp <= Date.now()) {
     throw new PolicyViolationError("EXPIRED_POLICY", "Expiration timestamp must be in the future.");
   }
 
-  const salt = params.salt ?? createHash("sha256").update(`${params.taskId}:${Date.now()}`).digest("hex");
+  const salt = params.salt ?? sha256Hex(`${params.taskId}:${Date.now()}`);
 
   return {
     taskId: params.taskId,
@@ -117,5 +126,5 @@ export function computePolicyCommitment(policy: TaskPolicy): string {
     salt: policy.salt,
   });
 
-  return "0x" + createHash("sha256").update(payload).digest("hex");
+  return "0x" + sha256Hex(payload);
 }

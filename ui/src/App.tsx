@@ -3,6 +3,7 @@ import { Header } from "./components/Header";
 import { EscrowTimeline } from "./components/EscrowTimeline";
 import { TaskDetailsCard } from "./components/TaskDetailsCard";
 import { RoleActionPanel } from "./components/RoleActionPanel";
+import { AgentAuthorityPanel } from "./components/AgentAuthorityPanel";
 import { PrivacyModelInspector } from "./components/PrivacyModelInspector";
 import { walletService, WalletState } from "./services/wallet";
 import { escrowService, EscrowContractData } from "./services/escrowService";
@@ -392,6 +393,12 @@ export const App: React.FC = () => {
           onResetDemo={handleResetDemo}
         />
       </div>
+
+      <AgentAuthorityPanel
+        onLog={addLog}
+        onMidnightSettle={escrowState.taskState === "COMPLETION_PENDING" ? () => handleSettleTask(2) : undefined}
+        isMidnightBusy={Boolean(txLifecycle && ["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(txLifecycle.status))}
+      />
 
       <PrivacyModelInspector />
 

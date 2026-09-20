@@ -4,6 +4,7 @@ import * as Witnesses from "./witnesses.js";
 
 export * from "./managed/task_escrow/contract/index.js";
 export * from "./witnesses.js";
+export * from "./pactra/index.js";
 
 export const CompiledTaskEscrowContract = CompiledContract.make<
   CompiledTaskEscrow.Contract<Witnesses.TaskEscrowPrivateState>

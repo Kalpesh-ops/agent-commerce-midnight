@@ -8,7 +8,7 @@
  * Agent -> Request Service -> Policy Check -> Price Check -> Escrow Allocation -> Service Execution -> Evidence Generation
  */
 
-import { createHash } from "node:crypto";
+import { sha256Hex } from "./cryptoUtils.js";
 import { AgentAuthorityManager, AuthorizedProcurementToken } from "./authority.js";
 import { ServiceRegistry } from "./registry.js";
 import { PolicyViolationError } from "./policy.js";
@@ -63,7 +63,7 @@ export class ProcurementEngine {
     private readonly registry: ServiceRegistry
   ) {}
 
-  public getAuthorityManager(): AgentAuthorityManager {
+  public getAuthority(): AgentAuthorityManager {
     return this.authority;
   }
 
@@ -153,13 +153,11 @@ export class ProcurementEngine {
     if (simulateFailure === "INVALID_EVIDENCE") {
       outputHash = "0xinvalid_tampered_output_hash_corrupt_data_0000000000000000000000";
     } else {
-      const hasher = createHash("sha256");
-      hasher.update(`${record.jobSpec.jobId}:${record.jobSpec.inputDatasetHash}:${service.providerCommitment}`);
-      outputHash = "0x" + hasher.digest("hex");
+      outputHash = "0x" + sha256Hex(`${record.jobSpec.jobId}:${record.jobSpec.inputDatasetHash}:${service.providerCommitment}`);
     }
 
     const sigPayload = `${outputHash}:${Date.now()}:${service.providerCommitment}`;
-    const evidenceSignature = "0xsig_" + createHash("sha256").update(sigPayload).digest("hex").slice(0, 32);
+    const evidenceSignature = "0xsig_" + sha256Hex(sigPayload).slice(0, 32);
 
     const evidence: ExecutionEvidence = {
       jobId: record.jobSpec.jobId,

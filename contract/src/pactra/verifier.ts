@@ -8,7 +8,7 @@
  * `HUMAN / EXTERNAL VERIFIER REQUIRED`. The agent CANNOT declare itself successful.
  */
 
-import { createHash } from "node:crypto";
+import { sha256Hex } from "./cryptoUtils.js";
 import { ExecutionEvidence } from "./procurement.js";
 
 export interface ObjectiveConditionSpec {
@@ -60,7 +60,7 @@ export class CompletionVerifier {
       maxAllowedCost: spec.maxAllowedCost.toString(),
       isSubjective: spec.isSubjectiveTask,
     });
-    return "0x" + createHash("sha256").update(payload).digest("hex");
+    return "0x" + sha256Hex(payload);
   }
 
   /**
