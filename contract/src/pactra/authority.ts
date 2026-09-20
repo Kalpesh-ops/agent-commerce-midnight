@@ -35,6 +35,7 @@ export interface AuthorizedProcurementToken {
 
 export class AgentAuthorityManager {
   private currentSpent: bigint = 0n;
+  private reservedBudget: bigint = 0n;
   private readonly userTreasuryTotal: bigint;
   private readonly taskEscrowAllocation: bigint;
   private readonly policy: TaskPolicy;
@@ -68,7 +69,7 @@ export class AgentAuthorityManager {
       userTreasuryTotal: this.userTreasuryTotal,
       taskEscrowAllocation: this.taskEscrowAllocation,
       currentSpent: this.currentSpent,
-      remainingBudget: this.taskEscrowAllocation - this.currentSpent,
+      remainingBudget: this.taskEscrowAllocation - this.currentSpent - this.reservedBudget,
       perTransactionLimit: this.policy.maxSpendPerTransaction,
     };
   }
@@ -79,7 +80,7 @@ export class AgentAuthorityManager {
 
   /**
    * Evaluates a procurement request against the task policy.
-   * If authorized, returns an isolated authorization token for the specific service.
+   * If authorized, reserves the amount and returns an isolated authorization token for the specific service.
    */
   public authorizeProcurement(request: ProcurementRequest): AuthorizedProcurementToken {
     // 1. Enforce Expiration
@@ -122,13 +123,16 @@ export class AgentAuthorityManager {
       );
     }
 
-    // 6. Enforce Total Task Escrow Budget Bound
-    if (this.currentSpent + request.requestedAmount > this.taskEscrowAllocation) {
+    // 6. Enforce Total Task Escrow Budget Bound (accounting for reserved and already spent budget)
+    if (this.currentSpent + this.reservedBudget + request.requestedAmount > this.taskEscrowAllocation) {
       throw new PolicyViolationError(
         "BUDGET_EXHAUSTED",
-        `Requested amount (${request.requestedAmount}) would exceed remaining task budget (${this.taskEscrowAllocation - this.currentSpent}).`
+        `Requested amount (${request.requestedAmount}) would exceed remaining task budget (${this.taskEscrowAllocation - (this.currentSpent + this.reservedBudget)}).`
       );
     }
+
+    // Reserve the allocated amount for this active procurement
+    this.reservedBudget += request.requestedAmount;
 
     const authorizationId = `auth_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -143,6 +147,13 @@ export class AgentAuthorityManager {
   }
 
   /**
+   * Releases previously reserved budget (e.g. if procurement failed or timed out).
+   */
+  public releaseReservation(amount: bigint): void {
+    this.reservedBudget = this.reservedBudget >= amount ? this.reservedBudget - amount : 0n;
+  }
+
+  /**
    * Confirms payment deduction after verified execution.
    */
   public recordExpenditure(amount: bigint): void {
@@ -153,6 +164,7 @@ export class AgentAuthorityManager {
       );
     }
     this.currentSpent += amount;
+    this.reservedBudget = this.reservedBudget >= amount ? this.reservedBudget - amount : 0n;
   }
 
   /**
