@@ -1,0 +1,24 @@
+{
+  "name": "agent-commerce-midnight",
+  "version": "0.1.0",
+  "description": "Autonomous Agent Commerce & Escrow Protocol on Midnight Network",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "contract",
+    "ui"
+  ],
+  "scripts": {
+    "compile:contract": "npm run compile --prefix contract",
+    "test:contract": "npm run test --prefix contract",
+    "build:contract": "npm run build --prefix contract",
+    "dev:ui": "npm run dev --prefix ui",
+    "build:ui": "npm run build --prefix ui",
+    "test": "npm run test --prefix contract",
+    "typecheck": "npm run typecheck --prefix contract && npm run typecheck --prefix ui",
+    "build": "npm run build:contract && npm run build:ui"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  }
+}
