@@ -54,15 +54,36 @@ export const App: React.FC = () => {
 
   // Initial mount: check Lace extension and attempt to reconstruct state from Preprod Indexer
   useEffect(() => {
-    const isInstalled = walletService.isLaceInstalled();
-    setWallet((prev) => ({ ...prev, isInstalled }));
-    if (isInstalled) {
+    let found = walletService.isLaceInstalled();
+    setWallet((prev) => ({ ...prev, isInstalled: found }));
+    if (found) {
       addLog("Midnight Lace wallet extension detected.", "success");
-    } else {
-      addLog("Midnight Lace wallet extension not found (offline demo mode available).", "info");
     }
 
-    // Reconstruct state from saved deployed contract address if present
+    const interval = setInterval(() => {
+      if (!found && walletService.isLaceInstalled()) {
+        found = true;
+        setWallet((prev) => ({ ...prev, isInstalled: true }));
+        addLog("Midnight Lace wallet extension detected.", "success");
+        clearInterval(interval);
+      }
+    }, 300);
+
+    const timer = setTimeout(() => {
+      clearInterval(interval);
+      if (!walletService.isLaceInstalled()) {
+        addLog("Midnight Lace wallet extension not detected (install extension or use offline demo mode).", "info");
+      }
+    }, 2400);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timer);
+    };
+  }, [addLog]);
+
+  // Reconstruct state from saved deployed contract address if present
+  useEffect(() => {
     const savedAddress = localStorage.getItem("midnight_task_escrow_contract_address");
     if (savedAddress) {
       addLog(`Found persisted contract address: ${savedAddress.slice(0, 16)}...`, "info");

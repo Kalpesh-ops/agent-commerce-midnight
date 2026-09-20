@@ -19,6 +19,7 @@
     "build": "npm run build:contract && npm run build:ui"
   },
   "devDependencies": {
+    "@types/node": "^26.6.2",
     "typescript": "^5.8.2"
   }
 }
