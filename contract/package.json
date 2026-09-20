@@ -25,6 +25,7 @@
     "@midnight-ntwrk/midnight-js-types": "4.1.1"
   },
   "devDependencies": {
+    "@types/node": "^26.6.2",
     "typescript": "^5.8.2",
     "vitest": "^3.0.7"
   }
