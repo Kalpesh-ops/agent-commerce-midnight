@@ -1,0 +1,129 @@
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+export enum TaskState {
+  UNINITIALIZED,
+  CREATED,
+  FUNDED,
+  ACTIVE,
+  COMPLETION_PENDING,
+  COMPLETED,
+  REFUNDED
+}
+
+export enum SettlementState {
+  UNSETTLED,
+  SETTLED_SUCCESS,
+  SETTLED_REFUND
+}
+
+// Observable Public Ledger State
+export ledger taskId: Bytes<32>;
+export ledger creatorCommitment: Bytes<32>;
+export ledger agentCommitment: Bytes<32>;
+export ledger maxBudget: Uint<64>;
+export ledger escrowedAmount: Uint<64>;
+export ledger taskState: TaskState;
+export ledger conditionHash: Bytes<32>;
+export ledger completionHash: Bytes<32>;
+export ledger settlementState: SettlementState;
+export ledger sequence: Counter;
+
+// Constructor initializes clean uninitialized state
+constructor() {
+  taskId = pad(32, "");
+  creatorCommitment = pad(32, "");
+  agentCommitment = pad(32, "");
+  maxBudget = 0;
+  escrowedAmount = 0;
+  taskState = TaskState.UNINITIALIZED;
+  conditionHash = pad(32, "");
+  completionHash = pad(32, "");
+  settlementState = SettlementState.UNSETTLED;
+  sequence.increment(1);
+}
+
+// Private witnesses for identity proofs without disclosing secret keys
+witness creatorSecretKey(): Bytes<32>;
+witness agentSecretKey(): Bytes<32>;
+
+// Identity commitment circuit using persistent hash
+export circuit computeCommitment(sk: Bytes<32>, salt: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "agent-commerce:pk:"), salt, sk]);
+}
+
+// 1. Create Task: Task Creator initializes a bounded task escrow
+export circuit createTask(
+  newTaskId: Bytes<32>,
+  targetAgentCommitment: Bytes<32>,
+  budgetLimit: Uint<64>,
+  targetConditionHash: Bytes<32>
+): [] {
+  assert(taskState == TaskState.UNINITIALIZED, "Task is already initialized");
+  assert(budgetLimit > 0, "Max budget must be greater than zero");
+
+  const myCommitment = computeCommitment(creatorSecretKey(), sequence as Field as Bytes<32>);
+  creatorCommitment = disclose(myCommitment);
+  taskId = disclose(newTaskId);
+  agentCommitment = disclose(targetAgentCommitment);
+  maxBudget = disclose(budgetLimit);
+  conditionHash = disclose(targetConditionHash);
+  taskState = TaskState.CREATED;
+}
+
+// 2. Fund Task: Task Creator deposits funds up to the maximum budget
+export circuit fundTask(amount: Uint<64>): [] {
+  assert(taskState == TaskState.CREATED || taskState == TaskState.FUNDED, "Task cannot be funded in current state");
+  assert(creatorCommitment == computeCommitment(creatorSecretKey(), sequence as Field as Bytes<32>), "Only task creator can fund task");
+  assert(amount > 0, "Deposit amount must be greater than zero");
+  assert(escrowedAmount + amount <= maxBudget, "Escrowed amount cannot exceed maximum budget");
+
+  escrowedAmount = disclose((escrowedAmount + amount) as Uint<64>);
+  taskState = TaskState.FUNDED;
+}
+
+// 3. Accept Task: Authorized AI Agent accepts the task
+export circuit acceptTask(): [] {
+  assert(taskState == TaskState.FUNDED, "Task must be FUNDED before it can be activated");
+  assert(agentCommitment == computeCommitment(agentSecretKey(), sequence as Field as Bytes<32>), "Only authorized agent can accept task");
+
+  taskState = TaskState.ACTIVE;
+}
+
+// 4. Submit Completion: Authorized AI Agent submits evidence/proof of task completion
+export circuit submitCompletion(evidenceHash: Bytes<32>): [] {
+  assert(taskState == TaskState.ACTIVE, "Task must be ACTIVE to submit completion");
+  assert(agentCommitment == computeCommitment(agentSecretKey(), sequence as Field as Bytes<32>), "Only authorized agent can submit completion");
+
+  completionHash = disclose(evidenceHash);
+  taskState = TaskState.COMPLETION_PENDING;
+}
+
+// 5. Settle Task: Task Creator settles payment to agent upon objective verification
+export circuit settleTask(payoutAmount: Uint<64>): [] {
+  assert(taskState == TaskState.COMPLETION_PENDING, "Task must be in COMPLETION_PENDING to settle");
+  assert(creatorCommitment == computeCommitment(creatorSecretKey(), sequence as Field as Bytes<32>), "Only task creator can settle payment");
+  assert(settlementState == SettlementState.UNSETTLED, "Settlement cannot happen twice");
+  assert(payoutAmount > 0, "Payout amount must be greater than zero");
+  assert(payoutAmount <= escrowedAmount, "Payout cannot exceed escrowed funds");
+
+  settlementState = SettlementState.SETTLED_SUCCESS;
+  taskState = TaskState.COMPLETED;
+}
+
+// 6. Refund Task: Task Creator reclaims escrowed funds if cancelled or expired
+export circuit refundTask(): [] {
+  assert(
+    taskState == TaskState.CREATED ||
+    taskState == TaskState.FUNDED ||
+    taskState == TaskState.ACTIVE ||
+    taskState == TaskState.COMPLETION_PENDING,
+    "Task cannot be refunded in completed or already refunded state"
+  );
+  assert(creatorCommitment == computeCommitment(creatorSecretKey(), sequence as Field as Bytes<32>), "Only task creator can claim refund");
+  assert(settlementState == SettlementState.UNSETTLED, "Settlement already finalized");
+
+  settlementState = SettlementState.SETTLED_REFUND;
+  taskState = TaskState.REFUNDED;
+}

@@ -29,19 +29,27 @@ console.log(`Target: ${targetDir}`);
 
 let compileSuccess = false;
 
-// Check if direct compact command is available
-try {
-  execSync("compact --version", { stdio: "ignore" });
-  console.log("Found local compact executable.");
+// Check if a genuine midnight compact CLI is directly on PATH (not Windows NTFS compact.exe)
+function isMidnightCompact(cmd) {
+  try {
+    const res = execSync(`${cmd} compile --language-version`, { stdio: ["pipe", "pipe", "ignore"] }).toString();
+    return res.includes("0.");
+  } catch {
+    return false;
+  }
+}
+
+if (isMidnightCompact("compact")) {
+  console.log("Found direct Midnight compact toolchain.");
   const cmd = `compact compile "${contractSrc}" "${targetDir}"`;
   console.log(`Executing: ${cmd}`);
   execSync(cmd, { stdio: "inherit" });
   compileSuccess = true;
-} catch (e) {
-  // Try WSL compact
+} else {
+  // Use WSL Ubuntu Midnight compact toolchain
   const wslSrc = toWslPath(contractSrc);
   const wslTarget = toWslPath(targetDir);
-  console.log("Attempting compilation via WSL Ubuntu compact toolchain...");
+  console.log("Using WSL Ubuntu Midnight compact toolchain (/root/.local/bin/compact)...");
   const wslCmd = `wsl -d Ubuntu /root/.local/bin/compact compile "${wslSrc}" "${wslTarget}"`;
   console.log(`Executing: ${wslCmd}`);
   try {
@@ -54,5 +62,5 @@ try {
 }
 
 if (compileSuccess) {
-  console.log("Compact contract compiled successfully!");
+  console.log("✅ Compact contract compiled successfully to target directory!");
 }
