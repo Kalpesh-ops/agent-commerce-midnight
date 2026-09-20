@@ -3,14 +3,44 @@ import { EscrowContractData } from "../services/escrowService";
 
 interface TaskDetailsCardProps {
   data: EscrowContractData;
+  onRefreshFromIndexer?: () => void;
 }
 
-export const TaskDetailsCard: React.FC<TaskDetailsCardProps> = ({ data }) => {
+export const TaskDetailsCard: React.FC<TaskDetailsCardProps> = ({
+  data,
+  onRefreshFromIndexer,
+}) => {
   return (
     <div className="panel-card">
       <div className="panel-header">
-        <h3>Observable Ledger State</h3>
-        <span className={`state-pill ${data.taskState}`}>{data.taskState}</span>
+        <div>
+          <h3>Observable Ledger State</h3>
+          <div style={{ fontSize: "12px", color: data.isSimulated ? "var(--amber)" : "var(--emerald)", marginTop: "2px" }}>
+            {data.isSimulated ? "● Source: Local Testbed Simulation" : "● Source: Live Midnight Preprod Indexer"}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <span className={`state-pill ${data.taskState}`}>{data.taskState}</span>
+          {onRefreshFromIndexer && (
+            <button
+              className="btn-secondary"
+              style={{ padding: "4px 8px", fontSize: "11px" }}
+              onClick={onRefreshFromIndexer}
+              title="Query latest state from Midnight Preprod Indexer"
+            >
+              🔄 Refresh Indexer
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="data-row">
+        <span className="data-label">Contract Address</span>
+        <span className="data-value highlight-cyan" title={data.contractAddress || "Not deployed yet"}>
+          {data.contractAddress
+            ? `${data.contractAddress.slice(0, 10)}...${data.contractAddress.slice(-8)}`
+            : "No Contract Deployed"}
+        </span>
       </div>
 
       <div className="data-row">
@@ -22,12 +52,12 @@ export const TaskDetailsCard: React.FC<TaskDetailsCardProps> = ({ data }) => {
 
       <div className="data-row">
         <span className="data-label">Maximum Task Budget</span>
-        <span className="data-value highlight-cyan">{data.maxBudget} DUST/NIGHT</span>
+        <span className="data-value highlight-cyan">{data.maxBudget} DUST/tNIGHT</span>
       </div>
 
       <div className="data-row">
         <span className="data-label">Escrowed Balance</span>
-        <span className="data-value highlight-emerald">{data.escrowedAmount} DUST/NIGHT</span>
+        <span className="data-value highlight-emerald">{data.escrowedAmount} DUST/tNIGHT</span>
       </div>
 
       <div className="data-row">
@@ -83,8 +113,24 @@ export const TaskDetailsCard: React.FC<TaskDetailsCardProps> = ({ data }) => {
         </span>
       </div>
 
+      {data.lastTxHash && (
+        <div className="data-row">
+          <span className="data-label">Confirmed On-Chain Tx</span>
+          <span className="data-value highlight-emerald" title={data.lastTxHash}>
+            {data.lastTxHash.slice(0, 12)}...{data.lastTxHash.slice(-8)}
+          </span>
+        </div>
+      )}
+
+      {data.confirmedBlock && (
+        <div className="data-row">
+          <span className="data-label">Block Height</span>
+          <span className="data-value">Block #{data.confirmedBlock}</span>
+        </div>
+      )}
+
       <div className="data-row">
-        <span className="data-label">Contract Sequence Counter</span>
+        <span className="data-label">Sequence Counter</span>
         <span className="data-value">#{data.sequence}</span>
       </div>
     </div>

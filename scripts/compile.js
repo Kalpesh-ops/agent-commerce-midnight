@@ -63,4 +63,18 @@ if (isMidnightCompact("compact")) {
 
 if (compileSuccess) {
   console.log("✅ Compact contract compiled successfully to target directory!");
+
+  // Copy keys and zkir to ui/public for browser FetchZkConfigProvider
+  const uiPublicDir = path.join(rootDir, "ui", "public", "task_escrow");
+  fs.mkdirSync(uiPublicDir, { recursive: true });
+  const keysSrc = path.join(targetDir, "keys");
+  const zkirSrc = path.join(targetDir, "zkir");
+
+  if (fs.existsSync(keysSrc)) {
+    fs.cpSync(keysSrc, path.join(uiPublicDir, "keys"), { recursive: true });
+  }
+  if (fs.existsSync(zkirSrc)) {
+    fs.cpSync(zkirSrc, path.join(uiPublicDir, "zkir"), { recursive: true });
+  }
+  console.log("✅ Copied ZK circuit keys and intermediate representations to ui/public/task_escrow!");
 }

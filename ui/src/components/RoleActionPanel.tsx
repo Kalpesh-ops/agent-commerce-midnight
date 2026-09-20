@@ -1,33 +1,47 @@
 import React, { useState } from "react";
 import { EscrowContractData } from "../services/escrowService";
+import { TxLifecycleEvent, TxLifecycleStatus } from "../services/contractClient";
 
 interface RoleActionPanelProps {
   data: EscrowContractData;
+  isLiveMode: boolean;
+  txLifecycle: TxLifecycleEvent | null;
+  onDeployContract: () => Promise<void>;
+  onJoinContract: (address: string) => Promise<void>;
   onCreateTask: (budget: number) => Promise<void>;
   onFundTask: (amount: number) => Promise<void>;
   onAcceptTask: () => Promise<void>;
   onSubmitCompletion: (evidenceHash: string) => Promise<void>;
   onSettleTask: (payoutAmount: number) => Promise<void>;
   onRefundTask: () => Promise<void>;
-  onReset: () => void;
+  onResetDemo: () => void;
 }
 
 export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
   data,
+  isLiveMode,
+  txLifecycle,
+  onDeployContract,
+  onJoinContract,
   onCreateTask,
   onFundTask,
   onAcceptTask,
   onSubmitCompletion,
   onSettleTask,
   onRefundTask,
-  onReset,
+  onResetDemo,
 }) => {
   const [role, setRole] = useState<"creator" | "agent">("creator");
   const [budgetInput, setBudgetInput] = useState<number>(500);
   const [fundInput, setFundInput] = useState<number>(250);
   const [payoutInput, setPayoutInput] = useState<number>(250);
   const [evidenceInput, setEvidenceInput] = useState<string>("0xipfs_result_sha256_output_data_valid");
+  const [joinAddressInput, setJoinAddressInput] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
+
+  const isBusy = Boolean(
+    loading || (txLifecycle && ["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(txLifecycle.status))
+  );
 
   const handleAction = async (action: () => Promise<void>) => {
     setLoading(true);
@@ -41,16 +55,107 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
   return (
     <div className="panel-card">
       <div className="panel-header">
-        <h3>Protocol Actions & Authorization</h3>
-        <button
-          className="btn-secondary"
-          style={{ padding: "4px 10px", fontSize: "12px" }}
-          onClick={onReset}
-          title="Reset contract to clean state"
-        >
-          Reset Demo
-        </button>
+        <div>
+          <h3>Protocol Actions & Authorization</h3>
+          <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+            {isLiveMode
+              ? "All actions submit genuine Midnight Zero-Knowledge transactions through Lace."
+              : "Running in local simulation mode. Connect Lace on Preprod for live deployment."}
+          </div>
+        </div>
+        {!isLiveMode && (
+          <button
+            className="btn-secondary"
+            style={{ padding: "4px 10px", fontSize: "12px" }}
+            onClick={onResetDemo}
+            title="Reset demo simulation"
+          >
+            Reset Demo
+          </button>
+        )}
       </div>
+
+      {/* Real Transaction Lifecycle Progress Tracker */}
+      {txLifecycle && txLifecycle.status !== "IDLE" && (
+        <div
+          id="tx-lifecycle-tracker"
+          style={{
+            background:
+              txLifecycle.status === "CONFIRMED"
+                ? "rgba(0, 230, 153, 0.1)"
+                : txLifecycle.status === "FAILED"
+                ? "rgba(255, 51, 102, 0.12)"
+                : "rgba(112, 69, 255, 0.15)",
+            border: `1px solid ${
+              txLifecycle.status === "CONFIRMED"
+                ? "var(--emerald)"
+                : txLifecycle.status === "FAILED"
+                ? "var(--crimson)"
+                : "var(--border-glow)"
+            }`,
+            borderRadius: "var(--radius-md)",
+            padding: "12px 16px",
+            marginBottom: "18px",
+            fontSize: "13px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+            <span style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "11px", letterSpacing: "0.5px" }}>
+              Transaction Lifecycle: <span style={{ color: "var(--cyan)" }}>{txLifecycle.status}</span>
+            </span>
+            {isBusy && <span className="network-indicator-dot"></span>}
+          </div>
+          <p style={{ color: "var(--text-main)", marginBottom: "4px" }}>{txLifecycle.message}</p>
+          {txLifecycle.txHash && (
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--emerald)" }}>
+              Tx ID: {txLifecycle.txHash}
+            </div>
+          )}
+          {txLifecycle.blockHeight && (
+            <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+              Confirmed in Block #{txLifecycle.blockHeight}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Contract Deployment & Joining controls if not deployed */}
+      {isLiveMode && !data.contractAddress && (
+        <div style={{ background: "rgba(0, 0, 0, 0.25)", padding: "16px", borderRadius: "var(--radius-md)", marginBottom: "20px" }}>
+          <h4 style={{ fontSize: "14px", marginBottom: "8px" }}>On-Chain Preprod Contract Setup</h4>
+          <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "14px" }}>
+            No contract is active yet. Deploy a new TaskEscrow contract to Midnight Preprod (requires Lace signature & testnet tNight), or join an existing contract address.
+          </p>
+
+          <button
+            id="btn-deploy-preprod"
+            className="btn-action primary"
+            style={{ width: "100%", marginBottom: "12px" }}
+            disabled={isBusy}
+            onClick={() => handleAction(onDeployContract)}
+          >
+            {isBusy ? "Awaiting Lace Deployment..." : "🚀 Deploy TaskEscrow to Midnight Preprod"}
+          </button>
+
+          <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+            <input
+              type="text"
+              placeholder="Paste existing contract address (0x...)"
+              className="form-input"
+              value={joinAddressInput}
+              onChange={(e) => setJoinAddressInput(e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <button
+              className="btn-secondary"
+              disabled={isBusy || !joinAddressInput}
+              onClick={() => handleAction(() => onJoinContract(joinAddressInput))}
+            >
+              Join
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="tab-switcher">
         <button
@@ -87,10 +192,10 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
                 id="btn-create-task"
                 className="btn-action primary"
                 style={{ width: "100%" }}
-                disabled={loading || budgetInput <= 0}
+                disabled={isBusy || budgetInput <= 0}
                 onClick={() => handleAction(() => onCreateTask(budgetInput))}
               >
-                {loading ? "Generating ZK Proof..." : "1. Initialize Task Escrow"}
+                {isBusy ? "Submitting to Network..." : "1. Initialize Task Escrow (createTask)"}
               </button>
             </div>
           )}
@@ -115,13 +220,13 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
                 className="btn-action cyan"
                 style={{ width: "100%" }}
                 disabled={
-                  loading ||
+                  isBusy ||
                   fundInput <= 0 ||
                   data.escrowedAmount + fundInput > data.maxBudget
                 }
                 onClick={() => handleAction(() => onFundTask(fundInput))}
               >
-                {loading ? "Depositing Funds..." : "2. Fund Escrow Balance"}
+                {isBusy ? "Submitting Deposit..." : "2. Fund Escrow Balance (fundTask)"}
               </button>
             </div>
           )}
@@ -145,10 +250,10 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
                 id="btn-settle-task"
                 className="btn-action emerald"
                 style={{ width: "100%" }}
-                disabled={loading || payoutInput <= 0 || payoutInput > data.escrowedAmount}
+                disabled={isBusy || payoutInput <= 0 || payoutInput > data.escrowedAmount}
                 onClick={() => handleAction(() => onSettleTask(payoutInput))}
               >
-                {loading ? "Settling Payout..." : "5. Verify Conditions & Release Settlement"}
+                {isBusy ? "Releasing Payout..." : "5. Verify Conditions & Release Settlement (settleTask)"}
               </button>
             </div>
           )}
@@ -159,10 +264,10 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
                 id="btn-refund-task"
                 className="btn-action danger"
                 style={{ width: "100%" }}
-                disabled={loading}
+                disabled={isBusy}
                 onClick={() => handleAction(onRefundTask)}
               >
-                {loading ? "Processing..." : "Claim Refund (Cancel / Expire)"}
+                {isBusy ? "Processing..." : "Claim Refund (refundTask)"}
               </button>
             </div>
           )}
@@ -186,10 +291,10 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
                 id="btn-accept-task"
                 className="btn-action primary"
                 style={{ width: "100%" }}
-                disabled={loading}
+                disabled={isBusy}
                 onClick={() => handleAction(onAcceptTask)}
               >
-                {loading ? "Proving Authorization..." : "3. Accept & Begin Task"}
+                {isBusy ? "Proving Authorization..." : "3. Accept & Begin Task (acceptTask)"}
               </button>
             </div>
           )}
@@ -209,10 +314,10 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
                 id="btn-submit-completion"
                 className="btn-action cyan"
                 style={{ width: "100%" }}
-                disabled={loading || !evidenceInput}
+                disabled={isBusy || !evidenceInput}
                 onClick={() => handleAction(() => onSubmitCompletion(evidenceInput))}
               >
-                {loading ? "Submitting Evidence..." : "4. Submit Completion Evidence"}
+                {isBusy ? "Submitting Evidence..." : "4. Submit Completion Evidence (submitCompletion)"}
               </button>
             </div>
           )}

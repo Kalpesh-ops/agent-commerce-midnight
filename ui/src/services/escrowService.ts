@@ -1,3 +1,6 @@
+import { contractClient, TxLifecycleEvent } from "./contractClient";
+import { Ledger, TaskState, SettlementState } from "../../../contract/src/index.js";
+
 export type TaskStateName =
   | "UNINITIALIZED"
   | "CREATED"
@@ -13,6 +16,7 @@ export type SettlementStateName =
   | "SETTLED_REFUND";
 
 export interface EscrowContractData {
+  contractAddress: string | null;
   taskId: string;
   creatorCommitment: string;
   agentCommitment: string;
@@ -23,141 +27,59 @@ export interface EscrowContractData {
   completionHash: string;
   settlementState: SettlementStateName;
   sequence: number;
+  isSimulated: boolean;
+  confirmedBlock?: number;
+  lastTxHash?: string;
 }
 
-export class EscrowClientService {
-  private state: EscrowContractData = {
-    taskId: "0x0000000000000000000000000000000000000000000000000000000000000000",
-    creatorCommitment: "0x0000000000000000000000000000000000000000000000000000000000000000",
-    agentCommitment: "0x0000000000000000000000000000000000000000000000000000000000000000",
-    maxBudget: 0,
-    escrowedAmount: 0,
-    taskState: "UNINITIALIZED",
-    conditionHash: "0x0000000000000000000000000000000000000000000000000000000000000000",
-    completionHash: "0x0000000000000000000000000000000000000000000000000000000000000000",
-    settlementState: "UNSETTLED",
-    sequence: 1,
-  };
-
-  public getState(): EscrowContractData {
-    return { ...this.state };
+function stateEnumToName(state: TaskState): TaskStateName {
+  switch (state) {
+    case TaskState.UNINITIALIZED: return "UNINITIALIZED";
+    case TaskState.CREATED: return "CREATED";
+    case TaskState.FUNDED: return "FUNDED";
+    case TaskState.ACTIVE: return "ACTIVE";
+    case TaskState.COMPLETION_PENDING: return "COMPLETION_PENDING";
+    case TaskState.COMPLETED: return "COMPLETED";
+    case TaskState.REFUNDED: return "REFUNDED";
+    default: return "UNINITIALIZED";
   }
+}
 
-  public async createTask(params: {
-    taskId: string;
-    agentCommitment: string;
-    maxBudget: number;
-    conditionHash: string;
-    creatorSecret: string;
-  }): Promise<EscrowContractData> {
-    if (this.state.taskState !== "UNINITIALIZED") {
-      throw new Error("Compact Assert: Task is already initialized");
-    }
-    if (params.maxBudget <= 0) {
-      throw new Error("Compact Assert: Max budget must be greater than zero");
-    }
-
-    // Local simulated witness commitment for development testbed
-    const simulatedCommitment = `0xcreator_${Math.abs(this.hashCode(params.creatorSecret)).toString(16).padStart(16, "0")}`;
-
-    this.state = {
-      ...this.state,
-      taskId: params.taskId || `0xtask_${Date.now().toString(16)}`,
-      creatorCommitment: simulatedCommitment,
-      agentCommitment: params.agentCommitment || "0xagent_a4f92d8b100c59e7",
-      maxBudget: params.maxBudget,
-      conditionHash: params.conditionHash || "0xcond_sha256_verification_spec_001",
-      taskState: "CREATED",
-      sequence: this.state.sequence + 1,
-    };
-    return this.getState();
+function settlementEnumToName(state: SettlementState): SettlementStateName {
+  switch (state) {
+    case SettlementState.UNSETTLED: return "UNSETTLED";
+    case SettlementState.SETTLED_SUCCESS: return "SETTLED_SUCCESS";
+    case SettlementState.SETTLED_REFUND: return "SETTLED_REFUND";
+    default: return "UNSETTLED";
   }
+}
 
-  public async fundTask(amount: number): Promise<EscrowContractData> {
-    if (this.state.taskState !== "CREATED" && this.state.taskState !== "FUNDED") {
-      throw new Error("Compact Assert: Task cannot be funded in current state");
-    }
-    if (amount <= 0) {
-      throw new Error("Compact Assert: Deposit amount must be greater than zero");
-    }
-    if (this.state.escrowedAmount + amount > this.state.maxBudget) {
-      throw new Error(`Compact Assert: Escrowed amount (${this.state.escrowedAmount + amount}) cannot exceed maximum budget (${this.state.maxBudget})`);
-    }
+function bytesToHex(bytes: Uint8Array): string {
+  return "0x" + Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
-    this.state = {
-      ...this.state,
-      escrowedAmount: this.state.escrowedAmount + amount,
-      taskState: "FUNDED",
-    };
-    return this.getState();
+function stringOrHexToBytes32(input: string): Uint8Array {
+  const result = new Uint8Array(32);
+  if (input.startsWith("0x") && input.length >= 4) {
+    const hex = input.slice(2);
+    for (let i = 0; i < Math.min(32, hex.length / 2); i++) {
+      result[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16) || 0;
+    }
+  } else {
+    const encoded = new TextEncoder().encode(input);
+    result.set(encoded.slice(0, 32));
   }
+  return result;
+}
 
-  public async acceptTask(): Promise<EscrowContractData> {
-    if (this.state.taskState !== "FUNDED") {
-      throw new Error("Compact Assert: Task must be FUNDED before it can be activated");
-    }
+export class EscrowService {
+  private liveState: EscrowContractData | null = null;
+  private demoState: EscrowContractData = this.getInitialDemoState();
+  private mode: "live" | "demo" = "demo";
 
-    this.state = {
-      ...this.state,
-      taskState: "ACTIVE",
-    };
-    return this.getState();
-  }
-
-  public async submitCompletion(evidenceHash: string): Promise<EscrowContractData> {
-    if (this.state.taskState !== "ACTIVE") {
-      throw new Error("Compact Assert: Task must be ACTIVE to submit completion");
-    }
-
-    this.state = {
-      ...this.state,
-      completionHash: evidenceHash || `0xevidence_${Date.now().toString(16)}`,
-      taskState: "COMPLETION_PENDING",
-    };
-    return this.getState();
-  }
-
-  public async settleTask(payoutAmount: number): Promise<EscrowContractData> {
-    if (this.state.taskState !== "COMPLETION_PENDING") {
-      throw new Error("Compact Assert: Task must be in COMPLETION_PENDING to settle");
-    }
-    if (this.state.settlementState !== "UNSETTLED") {
-      throw new Error("Compact Assert: Settlement cannot happen twice");
-    }
-    if (payoutAmount <= 0) {
-      throw new Error("Compact Assert: Payout amount must be greater than zero");
-    }
-    if (payoutAmount > this.state.escrowedAmount) {
-      throw new Error(`Compact Assert: Payout (${payoutAmount}) cannot exceed escrowed funds (${this.state.escrowedAmount})`);
-    }
-
-    this.state = {
-      ...this.state,
-      taskState: "COMPLETED",
-      settlementState: "SETTLED_SUCCESS",
-    };
-    return this.getState();
-  }
-
-  public async refundTask(): Promise<EscrowContractData> {
-    const refundable = ["CREATED", "FUNDED", "ACTIVE", "COMPLETION_PENDING"].includes(this.state.taskState);
-    if (!refundable) {
-      throw new Error("Compact Assert: Task cannot be refunded in completed or already refunded state");
-    }
-    if (this.state.settlementState !== "UNSETTLED") {
-      throw new Error("Compact Assert: Settlement already finalized");
-    }
-
-    this.state = {
-      ...this.state,
-      taskState: "REFUNDED",
-      settlementState: "SETTLED_REFUND",
-    };
-    return this.getState();
-  }
-
-  public reset(): EscrowContractData {
-    this.state = {
+  public getInitialDemoState(): EscrowContractData {
+    return {
+      contractAddress: null,
       taskId: "0x0000000000000000000000000000000000000000000000000000000000000000",
       creatorCommitment: "0x0000000000000000000000000000000000000000000000000000000000000000",
       agentCommitment: "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -168,7 +90,230 @@ export class EscrowClientService {
       completionHash: "0x0000000000000000000000000000000000000000000000000000000000000000",
       settlementState: "UNSETTLED",
       sequence: 1,
+      isSimulated: true,
     };
+  }
+
+  public setMode(mode: "live" | "demo") {
+    this.mode = mode;
+  }
+
+  public getMode(): "live" | "demo" {
+    return this.mode;
+  }
+
+  public getState(): EscrowContractData {
+    if (this.mode === "live" && this.liveState) {
+      return { ...this.liveState, isSimulated: false };
+    }
+    return { ...this.demoState, isSimulated: true };
+  }
+
+  /**
+   * Reconstructs state from the live Midnight Preprod Indexer.
+   */
+  public async syncWithIndexer(contractAddress: string): Promise<EscrowContractData | null> {
+    const onChainLedger = await contractClient.queryOnChainState(contractAddress);
+    if (!onChainLedger) {
+      return null;
+    }
+
+    this.liveState = {
+      contractAddress,
+      taskId: bytesToHex(onChainLedger.taskId),
+      creatorCommitment: bytesToHex(onChainLedger.creatorCommitment),
+      agentCommitment: bytesToHex(onChainLedger.agentCommitment),
+      maxBudget: Number(onChainLedger.maxBudget),
+      escrowedAmount: Number(onChainLedger.escrowedAmount),
+      taskState: stateEnumToName(onChainLedger.taskState),
+      conditionHash: bytesToHex(onChainLedger.conditionHash),
+      completionHash: bytesToHex(onChainLedger.completionHash),
+      settlementState: settlementEnumToName(onChainLedger.settlementState),
+      sequence: Number(onChainLedger.sequence),
+      isSimulated: false,
+    };
+    this.mode = "live";
+    return this.getState();
+  }
+
+  /**
+   * Deploys a new real contract on Midnight Preprod via Lace.
+   */
+  public async deployOnPreprod(onStatus?: (event: TxLifecycleEvent) => void): Promise<string> {
+    if (onStatus) contractClient.setLifecycleListener(onStatus);
+    const contractAddress = await contractClient.deployOnChain("preprod");
+    await this.syncWithIndexer(contractAddress);
+    return contractAddress;
+  }
+
+  /**
+   * Join an existing deployed contract.
+   */
+  public async joinDeployed(contractAddress: string): Promise<EscrowContractData | null> {
+    await contractClient.joinContract(contractAddress, "preprod");
+    return this.syncWithIndexer(contractAddress);
+  }
+
+  public async createTask(params: {
+    taskId: string;
+    agentCommitment: string;
+    maxBudget: number;
+    conditionHash: string;
+    creatorSecret: string;
+  }, onStatus?: (event: TxLifecycleEvent) => void): Promise<EscrowContractData> {
+    if (this.mode === "live" && contractClient.getActiveContractAddress()) {
+      if (onStatus) contractClient.setLifecycleListener(onStatus);
+      const taskIdBytes = stringOrHexToBytes32(params.taskId);
+      const agentPkBytes = stringOrHexToBytes32(params.agentCommitment);
+      const conditionBytes = stringOrHexToBytes32(params.conditionHash);
+
+      const tx = await contractClient.callCreateTask(
+        taskIdBytes,
+        agentPkBytes,
+        BigInt(params.maxBudget),
+        conditionBytes
+      );
+
+      const contractAddr = contractClient.getActiveContractAddress()!;
+      await this.syncWithIndexer(contractAddr);
+      if (this.liveState) {
+        this.liveState.lastTxHash = tx.public.txHash;
+        this.liveState.confirmedBlock = tx.public.blockHeight;
+      }
+      return this.getState();
+    }
+
+    // Demo / fallback simulation mode
+    const simulatedCommitment = `0xcreator_${Math.abs(this.hashCode(params.creatorSecret)).toString(16).padStart(16, "0")}`;
+    this.demoState = {
+      ...this.demoState,
+      taskId: params.taskId || `0xtask_${Date.now().toString(16)}`,
+      creatorCommitment: simulatedCommitment,
+      agentCommitment: params.agentCommitment || "0xagent_a4f92d8b100c59e7",
+      maxBudget: params.maxBudget,
+      conditionHash: params.conditionHash || "0xcond_sha256_verification_spec_001",
+      taskState: "CREATED",
+      sequence: this.demoState.sequence + 1,
+      isSimulated: true,
+    };
+    return this.getState();
+  }
+
+  public async fundTask(amount: number, onStatus?: (event: TxLifecycleEvent) => void): Promise<EscrowContractData> {
+    if (this.mode === "live" && contractClient.getActiveContractAddress()) {
+      if (onStatus) contractClient.setLifecycleListener(onStatus);
+      const tx = await contractClient.callFundTask(BigInt(amount));
+      const contractAddr = contractClient.getActiveContractAddress()!;
+      await this.syncWithIndexer(contractAddr);
+      if (this.liveState) {
+        this.liveState.lastTxHash = tx.public.txHash;
+        this.liveState.confirmedBlock = tx.public.blockHeight;
+      }
+      return this.getState();
+    }
+
+    if (this.demoState.escrowedAmount + amount > this.demoState.maxBudget) {
+      throw new Error(`Deposit exceeds max budget (${this.demoState.maxBudget})`);
+    }
+    this.demoState = {
+      ...this.demoState,
+      escrowedAmount: this.demoState.escrowedAmount + amount,
+      taskState: "FUNDED",
+      isSimulated: true,
+    };
+    return this.getState();
+  }
+
+  public async acceptTask(onStatus?: (event: TxLifecycleEvent) => void): Promise<EscrowContractData> {
+    if (this.mode === "live" && contractClient.getActiveContractAddress()) {
+      if (onStatus) contractClient.setLifecycleListener(onStatus);
+      const tx = await contractClient.callAcceptTask();
+      const contractAddr = contractClient.getActiveContractAddress()!;
+      await this.syncWithIndexer(contractAddr);
+      if (this.liveState) {
+        this.liveState.lastTxHash = tx.public.txHash;
+        this.liveState.confirmedBlock = tx.public.blockHeight;
+      }
+      return this.getState();
+    }
+
+    this.demoState = {
+      ...this.demoState,
+      taskState: "ACTIVE",
+      isSimulated: true,
+    };
+    return this.getState();
+  }
+
+  public async submitCompletion(evidenceHash: string, onStatus?: (event: TxLifecycleEvent) => void): Promise<EscrowContractData> {
+    if (this.mode === "live" && contractClient.getActiveContractAddress()) {
+      if (onStatus) contractClient.setLifecycleListener(onStatus);
+      const evidenceBytes = stringOrHexToBytes32(evidenceHash);
+      const tx = await contractClient.callSubmitCompletion(evidenceBytes);
+      const contractAddr = contractClient.getActiveContractAddress()!;
+      await this.syncWithIndexer(contractAddr);
+      if (this.liveState) {
+        this.liveState.lastTxHash = tx.public.txHash;
+        this.liveState.confirmedBlock = tx.public.blockHeight;
+      }
+      return this.getState();
+    }
+
+    this.demoState = {
+      ...this.demoState,
+      completionHash: evidenceHash,
+      taskState: "COMPLETION_PENDING",
+      isSimulated: true,
+    };
+    return this.getState();
+  }
+
+  public async settleTask(payoutAmount: number, onStatus?: (event: TxLifecycleEvent) => void): Promise<EscrowContractData> {
+    if (this.mode === "live" && contractClient.getActiveContractAddress()) {
+      if (onStatus) contractClient.setLifecycleListener(onStatus);
+      const tx = await contractClient.callSettleTask(BigInt(payoutAmount));
+      const contractAddr = contractClient.getActiveContractAddress()!;
+      await this.syncWithIndexer(contractAddr);
+      if (this.liveState) {
+        this.liveState.lastTxHash = tx.public.txHash;
+        this.liveState.confirmedBlock = tx.public.blockHeight;
+      }
+      return this.getState();
+    }
+
+    this.demoState = {
+      ...this.demoState,
+      taskState: "COMPLETED",
+      settlementState: "SETTLED_SUCCESS",
+      isSimulated: true,
+    };
+    return this.getState();
+  }
+
+  public async refundTask(onStatus?: (event: TxLifecycleEvent) => void): Promise<EscrowContractData> {
+    if (this.mode === "live" && contractClient.getActiveContractAddress()) {
+      if (onStatus) contractClient.setLifecycleListener(onStatus);
+      const tx = await contractClient.callRefundTask();
+      const contractAddr = contractClient.getActiveContractAddress()!;
+      await this.syncWithIndexer(contractAddr);
+      if (this.liveState) {
+        this.liveState.lastTxHash = tx.public.txHash;
+        this.liveState.confirmedBlock = tx.public.blockHeight;
+      }
+      return this.getState();
+    }
+
+    this.demoState = {
+      ...this.demoState,
+      taskState: "REFUNDED",
+      settlementState: "SETTLED_REFUND",
+      isSimulated: true,
+    };
+    return this.getState();
+  }
+
+  public resetDemo(): EscrowContractData {
+    this.demoState = this.getInitialDemoState();
     return this.getState();
   }
 
@@ -181,4 +326,4 @@ export class EscrowClientService {
   }
 }
 
-export const escrowService = new EscrowClientService();
+export const escrowService = new EscrowService();
