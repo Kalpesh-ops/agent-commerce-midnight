@@ -50,6 +50,14 @@ describe("E2E Tester Journey: Onboarding, Bounded Compute, Telemetry & Feedback 
         remainingBudget: 10n,
         perTransactionLimit: 3n,
       },
+      completionConditions: {
+        expectedJobId: "job_e2e",
+        expectedProviderCommitment: "0xprovider_alpha_enclave_99a4c102",
+        maxAllowedCost: 3n,
+        isSubjectiveTask: false,
+        externalVerifierRequired: false,
+        verifierDescription: "Matrix Factorization Checksum",
+      },
     };
 
     const agent = new PactraAgentClient(envelope, registry);
