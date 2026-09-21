@@ -29,6 +29,8 @@ import {
   AgentCapability,
 } from "../../../contract/src/index.js";
 
+export type PactraLevel2State = PactraProtocolState;
+
 export interface PactraProtocolState {
   policy: TaskPolicy;
   policyCommitment: string;
@@ -184,7 +186,7 @@ class PactraUiService {
       serviceId: service.serviceId,
       capability: service.category,
       inputPayloadHash: customPayload || `0xpayload_${service.serviceId}_${Date.now()}`,
-      maxDurationSeconds: service.evidenceRequirement.maxDurationSeconds,
+      maxDurationSeconds: service.evidenceRequirement?.maxDurationSeconds ?? 3600,
     };
 
     return this.procurementEngine.requestService(spec);

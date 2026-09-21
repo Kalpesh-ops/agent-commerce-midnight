@@ -11,7 +11,9 @@
 import { sha256Hex } from "./cryptoUtils.js";
 import { AgentAuthorityManager, AuthorizedProcurementToken } from "./authority.js";
 import { ServiceRegistry } from "./registry.js";
-import { PolicyViolationError } from "./policy.js";export type ProcurementStatus =
+import { PolicyViolationError, AgentCapability } from "./policy.js";
+
+export type ProcurementStatus =
   | "SERVICE_REQUESTED"
   | "SERVICE_ACCEPTED"
   | "SERVICE_EXECUTED"

@@ -81,30 +81,110 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
           id="tx-lifecycle-tracker"
           style={{
             background:
-              txLifecycle.status === "CONFIRMED"
+              txLifecycle.status === "INDEXED" || txLifecycle.status === "CONFIRMED"
                 ? "rgba(0, 230, 153, 0.1)"
                 : txLifecycle.status === "FAILED"
                 ? "rgba(255, 51, 102, 0.12)"
                 : "rgba(112, 69, 255, 0.15)",
             border: `1px solid ${
-              txLifecycle.status === "CONFIRMED"
+              txLifecycle.status === "INDEXED" || txLifecycle.status === "CONFIRMED"
                 ? "var(--emerald)"
                 : txLifecycle.status === "FAILED"
                 ? "var(--crimson)"
                 : "var(--border-glow)"
             }`,
             borderRadius: "var(--radius-md)",
-            padding: "12px 16px",
+            padding: "14px 16px",
             marginBottom: "18px",
             fontSize: "13px",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
             <span style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "11px", letterSpacing: "0.5px" }}>
-              Transaction Lifecycle: <span style={{ color: "var(--cyan)" }}>{txLifecycle.status}</span>
+              Midnight Transaction Lifecycle: <span style={{ color: txLifecycle.status === "FAILED" ? "var(--crimson)" : "var(--cyan)" }}>{txLifecycle.status}</span>
             </span>
             {isBusy && <span className="network-indicator-dot"></span>}
           </div>
+
+          {/* Stepper progression bar */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              marginBottom: "10px",
+              overflowX: "auto",
+              paddingBottom: "4px",
+            }}
+          >
+            {(
+              [
+                "READY",
+                "WALLET_REQUIRED",
+                "USER_SIGNATURE_REQUIRED",
+                "SUBMITTED",
+                "CONFIRMING",
+                "CONFIRMED",
+                "INDEXED",
+              ] as const
+            ).map((stage, idx) => {
+              const stages = [
+                "READY",
+                "WALLET_REQUIRED",
+                "USER_SIGNATURE_REQUIRED",
+                "SUBMITTED",
+                "CONFIRMING",
+                "CONFIRMED",
+                "INDEXED",
+              ];
+              const currentStatus = txLifecycle.status === "PENDING_USER_SIGNATURE" ? "USER_SIGNATURE_REQUIRED" : txLifecycle.status;
+              const currentIdx = stages.indexOf(currentStatus as any);
+              const isCurrent = currentStatus === stage;
+              const isPassed = currentIdx !== -1 && idx < currentIdx;
+
+              return (
+                <React.Fragment key={stage}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      background: isCurrent
+                        ? "rgba(0, 229, 255, 0.25)"
+                        : isPassed
+                        ? "rgba(0, 230, 153, 0.2)"
+                        : "rgba(255, 255, 255, 0.05)",
+                      border: `1px solid ${
+                        isCurrent
+                          ? "var(--cyan)"
+                          : isPassed
+                          ? "var(--emerald)"
+                          : "rgba(255, 255, 255, 0.1)"
+                      }`,
+                      color: isCurrent
+                        ? "var(--cyan)"
+                        : isPassed
+                        ? "var(--emerald)"
+                        : "var(--text-muted)",
+                      padding: "2px 6px",
+                      borderRadius: "4px",
+                      fontSize: "9px",
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {isPassed ? "✓ " : isCurrent ? "● " : ""}{stage}
+                  </div>
+                  {idx < stages.length - 1 && (
+                    <span style={{ color: isPassed ? "var(--emerald)" : "var(--text-muted)", fontSize: "9px" }}>
+                      →
+                    </span>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
           <p style={{ color: "var(--text-main)", marginBottom: "4px" }}>{txLifecycle.message}</p>
           {txLifecycle.txHash && (
             <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--emerald)" }}>

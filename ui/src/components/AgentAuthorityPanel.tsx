@@ -225,7 +225,7 @@ export const AgentAuthorityPanel: React.FC<AgentAuthorityPanelProps> = ({
             Capabilities
           </div>
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "6px" }}>
-            {pactraState.policy.allowedCapabilities.map((cap) => (
+            {pactraState.policy.allowedCapabilities.map((cap: string) => (
               <span
                 key={cap}
                 style={{

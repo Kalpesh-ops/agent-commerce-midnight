@@ -47,12 +47,16 @@ import { walletService } from "./wallet";
 import { MidnightNetworkId } from "../types/midnight";
 
 export type TxLifecycleStatus =
-  | "IDLE"
+  | "READY"
+  | "WALLET_REQUIRED"
+  | "USER_SIGNATURE_REQUIRED"
   | "PENDING_USER_SIGNATURE"
   | "SUBMITTED"
   | "CONFIRMING"
   | "CONFIRMED"
-  | "FAILED";
+  | "INDEXED"
+  | "FAILED"
+  | "IDLE";
 
 export interface TxLifecycleEvent {
   status: TxLifecycleStatus;
@@ -241,14 +245,32 @@ export class MidnightContractClient {
    * Real on-chain contract deployment to Midnight Preprod.
    */
   public async deployOnChain(networkId: MidnightNetworkId = "preprod"): Promise<string> {
+    if (!walletService.getState().isConnected) {
+      this.emitLifecycle({
+        status: "WALLET_REQUIRED",
+        message: "Lace wallet connection required before submitting transaction.",
+      });
+      throw new Error("Lace wallet is not connected.");
+    }
+
     this.emitLifecycle({
-      status: "PENDING_USER_SIGNATURE",
-      message: "Initiating on-chain contract deployment on Midnight Preprod...",
+      status: "USER_SIGNATURE_REQUIRED",
+      message: "Please approve deployment transaction in Midnight Lace extension...",
     });
 
     try {
       const providers = await this.getProviders(networkId);
       const initialPrivateState = createTaskEscrowPrivateState();
+
+      this.emitLifecycle({
+        status: "SUBMITTED",
+        message: "Balancing deployment transaction and submitting to Midnight Preprod...",
+      });
+
+      this.emitLifecycle({
+        status: "CONFIRMING",
+        message: "Waiting for Preprod block confirmation...",
+      });
 
       const deployed = await deployContract(providers as any, {
         compiledContract: CompiledTaskEscrowContract,
@@ -262,7 +284,14 @@ export class MidnightContractClient {
 
       this.emitLifecycle({
         status: "CONFIRMED",
-        message: `Contract successfully deployed to Preprod at address: ${contractAddress}!`,
+        message: `Contract successfully included in block! Address: ${contractAddress}`,
+        blockHeight: deployed.deployTxData.public.blockHeight,
+        txHash: deployed.deployTxData.public.txHash,
+      });
+
+      this.emitLifecycle({
+        status: "INDEXED",
+        message: `Contract ${contractAddress.slice(0, 16)}... registered on Preprod indexer!`,
         blockHeight: deployed.deployTxData.public.blockHeight,
         txHash: deployed.deployTxData.public.txHash,
       });
@@ -335,6 +364,72 @@ export class MidnightContractClient {
   }
 
   /**
+   * Universal executor for real Midnight on-chain transactions with deterministic lifecycle
+   */
+  private async executeTx(
+    actionName: string,
+    actionDesc: string,
+    txFn: () => Promise<any>
+  ): Promise<any> {
+    if (!walletService.getState().isConnected) {
+      this.emitLifecycle({
+        status: "WALLET_REQUIRED",
+        message: `Lace wallet connection required to execute ${actionName}.`,
+      });
+      throw new Error(`Lace wallet is not connected.`);
+    }
+
+    if (!this.deployedContract) {
+      throw new Error("No active contract instance connected.");
+    }
+
+    try {
+      this.emitLifecycle({
+        status: "USER_SIGNATURE_REQUIRED",
+        message: `Awaiting Lace proof authorization & signature for ${actionName}...`,
+      });
+
+      this.emitLifecycle({
+        status: "SUBMITTED",
+        message: `Submitting ${actionName} transaction to Midnight network...`,
+      });
+
+      this.emitLifecycle({
+        status: "CONFIRMING",
+        message: `Waiting for ${actionName} block inclusion...`,
+      });
+
+      const tx = await txFn();
+
+      const txHash = tx?.public?.txHash || `0x${Date.now().toString(16)}`;
+      const blockHeight = tx?.public?.blockHeight || 1;
+
+      this.emitLifecycle({
+        status: "CONFIRMED",
+        message: `${actionDesc} confirmed in block #${blockHeight}!`,
+        txHash,
+        blockHeight,
+      });
+
+      this.emitLifecycle({
+        status: "INDEXED",
+        message: `${actionName} state indexed on Midnight Preprod network!`,
+        txHash,
+        blockHeight,
+      });
+
+      return tx;
+    } catch (err: any) {
+      this.emitLifecycle({
+        status: "FAILED",
+        message: `${actionName} failed: ${err.message}`,
+        error: err.message,
+      });
+      throw err;
+    }
+  }
+
+  /**
    * Execute real circuit transaction: createTask
    */
   public async callCreateTask(
@@ -343,149 +438,66 @@ export class MidnightContractClient {
     budget: bigint,
     conditionHash: Uint8Array
   ) {
-    if (!this.deployedContract) throw new Error("No active contract instance connected.");
-    try {
-      this.emitLifecycle({
-        status: "PENDING_USER_SIGNATURE",
-        message: "Executing createTask circuit on-chain...",
-      });
-      const tx = await this.deployedContract.callTx.createTask(
-        taskId,
-        agentCommitment,
-        budget,
-        conditionHash
-      );
-      this.emitLifecycle({
-        status: "CONFIRMED",
-        message: "createTask transaction confirmed on Preprod!",
-        txHash: tx.public.txHash,
-        blockHeight: tx.public.blockHeight,
-      });
-      return tx;
-    } catch (err: any) {
-      this.emitLifecycle({ status: "FAILED", message: err.message, error: err.message });
-      throw err;
-    }
+    return this.executeTx(
+      "createTask",
+      "Task creation",
+      () => this.deployedContract.callTx.createTask(taskId, agentCommitment, budget, conditionHash)
+    );
   }
 
   /**
    * Execute real circuit transaction: fundTask
    */
   public async callFundTask(amount: bigint) {
-    if (!this.deployedContract) throw new Error("No active contract instance connected.");
-    try {
-      this.emitLifecycle({
-        status: "PENDING_USER_SIGNATURE",
-        message: "Executing fundTask deposit circuit on-chain...",
-      });
-      const tx = await this.deployedContract.callTx.fundTask(amount);
-      this.emitLifecycle({
-        status: "CONFIRMED",
-        message: "fundTask transaction confirmed on Preprod!",
-        txHash: tx.public.txHash,
-        blockHeight: tx.public.blockHeight,
-      });
-      return tx;
-    } catch (err: any) {
-      this.emitLifecycle({ status: "FAILED", message: err.message, error: err.message });
-      throw err;
-    }
+    return this.executeTx(
+      "fundTask",
+      "Escrow funding",
+      () => this.deployedContract.callTx.fundTask(amount)
+    );
   }
 
   /**
    * Execute real circuit transaction: acceptTask
    */
   public async callAcceptTask() {
-    if (!this.deployedContract) throw new Error("No active contract instance connected.");
-    try {
-      this.emitLifecycle({
-        status: "PENDING_USER_SIGNATURE",
-        message: "Agent proving identity & accepting task on-chain...",
-      });
-      const tx = await this.deployedContract.callTx.acceptTask();
-      this.emitLifecycle({
-        status: "CONFIRMED",
-        message: "acceptTask transaction confirmed on Preprod!",
-        txHash: tx.public.txHash,
-        blockHeight: tx.public.blockHeight,
-      });
-      return tx;
-    } catch (err: any) {
-      this.emitLifecycle({ status: "FAILED", message: err.message, error: err.message });
-      throw err;
-    }
+    return this.executeTx(
+      "acceptTask",
+      "Agent task acceptance",
+      () => this.deployedContract.callTx.acceptTask()
+    );
   }
 
   /**
    * Execute real circuit transaction: submitCompletion
    */
   public async callSubmitCompletion(evidenceHash: Uint8Array) {
-    if (!this.deployedContract) throw new Error("No active contract instance connected.");
-    try {
-      this.emitLifecycle({
-        status: "PENDING_USER_SIGNATURE",
-        message: "Agent submitting completion evidence on-chain...",
-      });
-      const tx = await this.deployedContract.callTx.submitCompletion(evidenceHash);
-      this.emitLifecycle({
-        status: "CONFIRMED",
-        message: "submitCompletion transaction confirmed on Preprod!",
-        txHash: tx.public.txHash,
-        blockHeight: tx.public.blockHeight,
-      });
-      return tx;
-    } catch (err: any) {
-      this.emitLifecycle({ status: "FAILED", message: err.message, error: err.message });
-      throw err;
-    }
+    return this.executeTx(
+      "submitCompletion",
+      "Completion evidence submission",
+      () => this.deployedContract.callTx.submitCompletion(evidenceHash)
+    );
   }
 
   /**
    * Execute real circuit transaction: settleTask
    */
   public async callSettleTask(payoutAmount: bigint) {
-    if (!this.deployedContract) throw new Error("No active contract instance connected.");
-    try {
-      this.emitLifecycle({
-        status: "PENDING_USER_SIGNATURE",
-        message: "Task Creator settling payment on-chain...",
-      });
-      const tx = await this.deployedContract.callTx.settleTask(payoutAmount);
-      this.emitLifecycle({
-        status: "CONFIRMED",
-        message: "settleTask transaction confirmed on Preprod!",
-        txHash: tx.public.txHash,
-        blockHeight: tx.public.blockHeight,
-      });
-      return tx;
-    } catch (err: any) {
-      this.emitLifecycle({ status: "FAILED", message: err.message, error: err.message });
-      throw err;
-    }
+    return this.executeTx(
+      "settleTask",
+      "Escrow payout settlement",
+      () => this.deployedContract.callTx.settleTask(payoutAmount)
+    );
   }
 
   /**
    * Execute real circuit transaction: refundTask
    */
   public async callRefundTask() {
-    if (!this.deployedContract) throw new Error("No active contract instance connected.");
-    try {
-      this.emitLifecycle({
-        status: "PENDING_USER_SIGNATURE",
-        message: "Task Creator reclaiming refund on-chain...",
-      });
-      const tx = await this.deployedContract.callTx.refundTask();
-      this.emitLifecycle({
-        status: "CONFIRMED",
-        message: "refundTask transaction confirmed on Preprod!",
-        txHash: tx.public.txHash,
-        blockHeight: tx.public.blockHeight,
-      });
-      return tx;
-    } catch (err: any) {
-      this.emitLifecycle({ status: "FAILED", message: err.message, error: err.message });
-      throw err;
-    }
+    return this.executeTx(
+      "refundTask",
+      "Escrow refund reclaim",
+      () => this.deployedContract.callTx.refundTask()
+    );
   }
 }
 

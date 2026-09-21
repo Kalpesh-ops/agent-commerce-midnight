@@ -33,12 +33,12 @@ export interface ServiceDefinition {
   readonly name: string;
   readonly providerCommitment: string;
   readonly category: AgentCapability;
-  readonly pricingModel: PricingModel;
+  readonly pricingModel?: PricingModel;
   readonly unitPrice: bigint;
   readonly maxPrice: bigint;
   readonly verificationMethod: VerificationMethod;
-  readonly evidenceRequirement: EvidenceRequirement;
-  readonly isTestSandboxProvider: boolean;
+  readonly evidenceRequirement?: EvidenceRequirement;
+  readonly isTestSandboxProvider?: boolean;
   readonly status: ServiceStatus;
   readonly description?: string;
   readonly metadataUri?: string;

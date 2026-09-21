@@ -4,6 +4,8 @@ import { EscrowTimeline } from "./components/EscrowTimeline";
 import { TaskDetailsCard } from "./components/TaskDetailsCard";
 import { RoleActionPanel } from "./components/RoleActionPanel";
 import { AgentAuthorityPanel } from "./components/AgentAuthorityPanel";
+import { MarketplaceView } from "./components/MarketplaceView";
+import { ArbitrationPanel } from "./components/ArbitrationPanel";
 import { PrivacyModelInspector } from "./components/PrivacyModelInspector";
 import { walletService, WalletState } from "./services/wallet";
 import { escrowService, EscrowContractData } from "./services/escrowService";
@@ -11,6 +13,7 @@ import { contractClient, TxLifecycleEvent } from "./services/contractClient";
 import { MidnightNetworkId } from "./types/midnight";
 
 export const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<"protocol" | "marketplace" | "arbitration" | "privacy">("protocol");
   const [wallet, setWallet] = useState<WalletState>(walletService.getState());
   const [escrowState, setEscrowState] = useState<EscrowContractData>(escrowService.getState());
   const [txLifecycle, setTxLifecycle] = useState<TxLifecycleEvent | null>(null);
@@ -359,48 +362,111 @@ export const App: React.FC = () => {
 
       <section className="vision-banner">
         <h2>Pactra: Autonomous Agent Commerce & Escrow Protocol</h2>
+        <p style={{ fontSize: "15px", fontWeight: 600, color: "var(--cyan)", margin: "6px 0 10px 0" }}>
+          "Give an agent a goal and bounded economic authority — not your wallet."
+        </p>
         <p>
           A privacy-preserving economic operating system for autonomous AI agents on Midnight.
-          AI agents operate with bounded budgets, capability-based permissions, and zero-knowledge proof verification.
+          AI agents privately plan, procure, and settle resources under cryptographically anchored policies without unrestricted treasury custody.
         </p>
         <div className="security-badge">
-          <span>🔒</span> Core Security Invariant: The agent NEVER has unrestricted access to the user treasury.
+          <span>🔒</span> Core Security Invariant: The agent NEVER receives unrestricted access to the user treasury.
         </div>
       </section>
 
-      <EscrowTimeline
-        taskState={escrowState.taskState}
-        settlementState={escrowState.settlementState}
-      />
-
-      <div className="dashboard-grid">
-        <TaskDetailsCard
-          data={escrowState}
-          onRefreshFromIndexer={escrowState.contractAddress ? handleRefreshIndexer : undefined}
-        />
-        <RoleActionPanel
-          data={escrowState}
-          isLiveMode={isLive}
-          txLifecycle={txLifecycle}
-          onDeployContract={handleDeployContract}
-          onJoinContract={handleJoinContract}
-          onCreateTask={handleCreateTask}
-          onFundTask={handleFundTask}
-          onAcceptTask={handleAcceptTask}
-          onSubmitCompletion={handleSubmitCompletion}
-          onSettleTask={handleSettleTask}
-          onRefundTask={handleRefundTask}
-          onResetDemo={handleResetDemo}
-        />
+      {/* Production Navigation Tabs */}
+      <div
+        style={{
+          display: "flex",
+          gap: "10px",
+          borderBottom: "1px solid var(--border-glow)",
+          paddingBottom: "12px",
+          marginBottom: "20px",
+          flexWrap: "wrap",
+        }}
+      >
+        <button
+          className={`tab-btn ${activeTab === "protocol" ? "active" : ""}`}
+          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
+          onClick={() => setActiveTab("protocol")}
+        >
+          🏛️ Task & Protocol
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "marketplace" ? "active" : ""}`}
+          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
+          onClick={() => setActiveTab("marketplace")}
+        >
+          🏪 Multi-Service Marketplace
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "arbitration" ? "active" : ""}`}
+          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
+          onClick={() => setActiveTab("arbitration")}
+        >
+          ⚖️ Threshold Arbitration
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "privacy" ? "active" : ""}`}
+          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
+          onClick={() => setActiveTab("privacy")}
+        >
+          🛡️ Privacy & State Boundaries
+        </button>
       </div>
 
-      <AgentAuthorityPanel
-        onLog={addLog}
-        onMidnightSettle={escrowState.taskState === "COMPLETION_PENDING" ? () => handleSettleTask(2) : undefined}
-        isMidnightBusy={Boolean(txLifecycle && ["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(txLifecycle.status))}
-      />
+      {activeTab === "protocol" && (
+        <>
+          <EscrowTimeline
+            taskState={escrowState.taskState}
+            settlementState={escrowState.settlementState}
+          />
 
-      <PrivacyModelInspector />
+          <div className="dashboard-grid">
+            <TaskDetailsCard
+              data={escrowState}
+              onRefreshFromIndexer={escrowState.contractAddress ? handleRefreshIndexer : undefined}
+            />
+            <RoleActionPanel
+              data={escrowState}
+              isLiveMode={isLive}
+              txLifecycle={txLifecycle}
+              onDeployContract={handleDeployContract}
+              onJoinContract={handleJoinContract}
+              onCreateTask={handleCreateTask}
+              onFundTask={handleFundTask}
+              onAcceptTask={handleAcceptTask}
+              onSubmitCompletion={handleSubmitCompletion}
+              onSettleTask={handleSettleTask}
+              onRefundTask={handleRefundTask}
+              onResetDemo={handleResetDemo}
+            />
+          </div>
+
+          <AgentAuthorityPanel
+            onLog={addLog}
+            onMidnightSettle={escrowState.taskState === "COMPLETION_PENDING" ? () => handleSettleTask(2) : undefined}
+            isMidnightBusy={Boolean(txLifecycle && ["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(txLifecycle.status))}
+          />
+        </>
+      )}
+
+      {activeTab === "marketplace" && (
+        <MarketplaceView
+          onLog={addLog}
+          onServiceProcured={() => {
+            setActiveTab("protocol");
+          }}
+        />
+      )}
+
+      {activeTab === "arbitration" && (
+        <ArbitrationPanel onLog={addLog} />
+      )}
+
+      {activeTab === "privacy" && (
+        <PrivacyModelInspector />
+      )}
 
       <div className="tx-log">
         <div style={{ color: "var(--text-muted)", marginBottom: "4px", fontSize: "11px", fontWeight: 700 }}>
