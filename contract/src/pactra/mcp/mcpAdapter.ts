@@ -39,8 +39,9 @@ export class PactraMcpAdapter {
   public async callTool(name: string, args: Record<string, unknown> = {}): Promise<McpToolResponse> {
     try {
       let result: unknown;
+      const normalizedName = name.startsWith("pactra_") ? name : `pactra_${name}`;
 
-      switch (name) {
+      switch (normalizedName) {
         case "pactra_discover_services": {
           const category = args.category as AgentCapability | undefined;
           const maxUnitPrice = args.maxUnitPrice ? BigInt(args.maxUnitPrice as string) : undefined;
@@ -80,6 +81,27 @@ export class PactraMcpAdapter {
 
         case "pactra_get_task_status": {
           result = await this.client.getTaskStatus();
+          break;
+        }
+
+        case "pactra_request_dispute": {
+          const procurementId = args.procurementId as string;
+          const reason = args.reason as string;
+          if (!procurementId || !reason) {
+            throw new Error("Missing required arguments: procurementId and reason are required.");
+          }
+          const claimant = (args.claimant as any) ?? "AGENT";
+          const evidencePayloadHash = (args.evidencePayloadHash as string) ?? "0xdispute_evidence";
+          result = {
+            disputeRegistered: true,
+            procurementId,
+            claimant,
+            reason,
+            evidencePayloadHash,
+            status: "PENDING_ARBITRATION",
+            routedTo: "PactraArbitrationBoard",
+            timestamp: Date.now(),
+          };
           break;
         }
 

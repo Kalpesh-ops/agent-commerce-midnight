@@ -106,10 +106,40 @@ export const PACTRA_MCP_TOOLS: readonly McpToolDeclaration[] = [
       properties: {},
     },
   },
+  {
+    name: "pactra_request_dispute",
+    description:
+      "Initiate a multi-party arbitration dispute for a failed, contested, or SLA-violating procurement.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        procurementId: {
+          type: "string",
+          description: "The procurement identifier under dispute.",
+        },
+        reason: {
+          type: "string",
+          description: "Clear factual explanation of the dispute or SLA failure.",
+        },
+        claimant: {
+          type: "string",
+          enum: ["CREATOR", "PROVIDER", "AGENT", "AUTOMATED_VERIFIER"],
+          description: "The party filing the dispute.",
+        },
+        evidencePayloadHash: {
+          type: "string",
+          description: "Optional hex-encoded hash of the contested deliverable or error log.",
+        },
+      },
+      required: ["procurementId", "reason"],
+    },
+  },
 ] as const;
 
 export type PactraToolName = (typeof PACTRA_MCP_TOOLS)[number]["name"];
 
 export function getToolDeclaration(name: string): McpToolDeclaration | undefined {
-  return PACTRA_MCP_TOOLS.find((t) => t.name === name);
+  const normalized = name.startsWith("pactra_") ? name : `pactra_${name}`;
+  return PACTRA_MCP_TOOLS.find((t) => t.name === normalized || t.name === name);
 }
+
