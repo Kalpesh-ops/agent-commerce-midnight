@@ -15,15 +15,21 @@ const FORBIDDEN_SECRET_PATTERNS = [
   /mnemonic\s*=\s*["'][a-z\s]{24,}["']/i,
   /walletSecret\s*=\s*["'][^"']+["']/i,
   /agentPrivateKey\s*=\s*["'][^"']+["']/i,
+  /localStorage\.setItem\s*\(\s*["'][^"']*(seed|mnemonic|privateKey|secret)["']/i,
 ];
 
 const FORBIDDEN_AGENT_METHODS = [
   /export\s+function\s+sendTransaction\s*\(/i,
   /public\s+sendTransaction\s*\(/i,
   /agentTreasuryAccess\s*:\s*true/i,
+  /allowArbitrarySigning\s*:\s*true/i,
 ];
 
-const SCAN_DIRS = ["contract/src", "ui/src"];
+const FORBIDDEN_TELEMETRY_PATTERNS = [
+  /telemetryService\.recordEvent\s*\([^)]*\b(prompt|privateKey|seedPhrase|walletSecret)\b/i,
+];
+
+const SCAN_DIRS = ["contract/src", "ui/src", "scripts"];
 let violationCount = 0;
 
 function scanFile(filePath) {
@@ -41,6 +47,14 @@ function scanFile(filePath) {
   for (const pattern of FORBIDDEN_AGENT_METHODS) {
     if (pattern.test(content)) {
       console.error(`[SECURITY VIOLATION] Prohibited agent treasury/transaction bypass method in: ${filePath}`);
+      console.error(`  Pattern: ${pattern}`);
+      violationCount++;
+    }
+  }
+
+  for (const pattern of FORBIDDEN_TELEMETRY_PATTERNS) {
+    if (pattern.test(content)) {
+      console.error(`[SECURITY VIOLATION] Prohibited sensitive data logging in telemetry call: ${filePath}`);
       console.error(`  Pattern: ${pattern}`);
       violationCount++;
     }
@@ -74,3 +88,4 @@ if (violationCount > 0) {
   console.log("✅ Security audit passed: Zero private key leaks, zero generic agent wallet bypasses found.");
   process.exit(0);
 }
+
