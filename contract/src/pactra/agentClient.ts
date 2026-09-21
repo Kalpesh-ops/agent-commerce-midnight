@@ -26,8 +26,8 @@ export interface TaskPolicyEnvelope {
   readonly taskId: string;
   readonly objective: string;
   readonly policy: TaskPolicy;
-  readonly allowedCapabilities: AgentCapability[];
-  readonly allowedProviders: string[];
+  readonly allowedCapabilities: readonly AgentCapability[];
+  readonly allowedProviders: readonly string[];
   readonly budget: AgentOperatingBudget;
   readonly completionConditions: ObjectiveConditionSpec;
 }

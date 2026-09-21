@@ -9,3 +9,4 @@ export * from "./arbitration.js";
 export * from "./midnightCityAdapter.js";
 export * from "./agentClient.js";
 export * from "./mcp/toolDefinitions.js";
+export * from "./mcp/mcpAdapter.js";
