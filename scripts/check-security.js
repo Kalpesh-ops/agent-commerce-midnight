@@ -15,6 +15,7 @@ const FORBIDDEN_SECRET_PATTERNS = [
   /mnemonic\s*=\s*["'][a-z\s]{24,}["']/i,
   /walletSecret\s*=\s*["'][^"']+["']/i,
   /agentPrivateKey\s*=\s*["'][^"']+["']/i,
+  /mainnetPrivateKey\s*=\s*["'][^"']+["']/i,
   /localStorage\.setItem\s*\(\s*["'][^"']*(seed|mnemonic|privateKey|secret)["']/i,
 ];
 
@@ -23,11 +24,17 @@ const FORBIDDEN_AGENT_METHODS = [
   /public\s+sendTransaction\s*\(/i,
   /agentTreasuryAccess\s*:\s*true/i,
   /allowArbitrarySigning\s*:\s*true/i,
+  /bypassPolicyEscrow\s*:\s*true/i,
 ];
 
 const FORBIDDEN_TELEMETRY_PATTERNS = [
   /telemetryService\.recordEvent\s*\([^)]*\b(prompt|privateKey|seedPhrase|walletSecret)\b/i,
 ];
+
+const FORBIDDEN_RUNTIME_PATTERNS = [
+  /class\s+PactraAutonomousRuntime[^\{]*\{[^}]*\b(userPrivateKey|walletSeed)\b/i,
+];
+
 
 const SCAN_DIRS = ["contract/src", "ui/src", "scripts"];
 let violationCount = 0;
@@ -55,6 +62,14 @@ function scanFile(filePath) {
   for (const pattern of FORBIDDEN_TELEMETRY_PATTERNS) {
     if (pattern.test(content)) {
       console.error(`[SECURITY VIOLATION] Prohibited sensitive data logging in telemetry call: ${filePath}`);
+      console.error(`  Pattern: ${pattern}`);
+      violationCount++;
+    }
+  }
+
+  for (const pattern of FORBIDDEN_RUNTIME_PATTERNS) {
+    if (pattern.test(content)) {
+      console.error(`[SECURITY VIOLATION] Prohibited private key/seed access in runtime: ${filePath}`);
       console.error(`  Pattern: ${pattern}`);
       violationCount++;
     }
