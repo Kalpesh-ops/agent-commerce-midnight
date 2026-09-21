@@ -38,15 +38,38 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
   const [evidenceInput, setEvidenceInput] = useState<string>("0xipfs_result_sha256_output_data_valid");
   const [joinAddressInput, setJoinAddressInput] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
+  const [actionError, setActionError] = useState<{ message: string; recovery: string } | null>(null);
 
   const isBusy = Boolean(
     loading || (txLifecycle && ["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(txLifecycle.status))
   );
 
-  const handleAction = async (action: () => Promise<void>) => {
+  const handleAction = async (action: () => Promise<void>, actionName: string = "action") => {
+    if (isBusy) {
+      return;
+    }
     setLoading(true);
+    setActionError(null);
     try {
       await action();
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      let recovery = "Check that Lace is unlocked and Midnight Preprod Indexer is reachable, then retry.";
+
+      if (/reject|denied|cancel/i.test(errMsg)) {
+        recovery = "Transaction authorization was rejected in Lace. Click retry whenever you're ready to proceed.";
+      } else if (/insufficient|balance|dust/i.test(errMsg)) {
+        recovery = "Your wallet has insufficient DUST for this operation. Request free testnet funds via Nethermind Faucet.";
+      } else if (/timeout|timed out/i.test(errMsg)) {
+        recovery = "Transaction took longer than expected to confirm. Check Lace activity tab or click Refresh Indexer.";
+      } else if (/network|preprod|unsupported/i.test(errMsg)) {
+        recovery = "Ensure Lace extension network selector is set to 'Midnight Preprod'.";
+      }
+
+      setActionError({
+        message: errMsg,
+        recovery,
+      });
     } finally {
       setLoading(false);
     }
@@ -74,6 +97,48 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
           </button>
         )}
       </div>
+
+      {/* Action Error & Recovery Guidance Box */}
+      {actionError && (
+        <div
+          id="action-error-recovery-card"
+          style={{
+            background: "rgba(255, 51, 102, 0.12)",
+            border: "1px solid var(--crimson)",
+            borderRadius: "var(--radius-md)",
+            padding: "14px 16px",
+            marginBottom: "18px",
+            fontSize: "13px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
+            <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+              <span style={{ fontSize: "18px" }}>⚠️</span>
+              <div>
+                <div style={{ fontWeight: 700, color: "var(--crimson)", fontSize: "13px" }}>
+                  Action Notice: {actionError.message}
+                </div>
+                <div style={{ color: "var(--text-main)", marginTop: "4px", fontSize: "12px", lineHeight: "1.4" }}>
+                  💡 <strong>Recovery:</strong> {actionError.recovery}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setActionError(null)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                fontSize: "16px",
+                lineHeight: 1,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Real Transaction Lifecycle Progress Tracker */}
       {txLifecycle && txLifecycle.status !== "IDLE" && (
