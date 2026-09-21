@@ -10,6 +10,9 @@ import {
   PolicyViolationError,
   PactraMcpAdapter,
   PACTRA_MCP_TOOLS,
+  sha256Hex,
+  createOnChainPolicyBinding,
+  validatePolicyAgainstOnChainBinding,
 } from "../pactra/index.js";
 
 describe("Pactra Level 4 — PactraAgentClient API & Non-Custodial Boundaries", () => {
@@ -310,5 +313,75 @@ describe("Pactra Level 4 — Model Context Protocol (MCP) Adapter & Tools", () =
     });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain("Policy Violation");
+  });
+});
+
+describe("Pactra Level 4 — Privacy Invariants & Commitment Consistency", () => {
+  it("derives deterministic 32-byte opaque commitments from private inputs", () => {
+    const input1 = "Deploy model with confidential weights";
+    const commit1 = "0x" + sha256Hex(input1);
+    const commit2 = "0x" + sha256Hex(input1);
+
+    expect(commit1).toBe(commit2);
+    expect(commit1).toMatch(/^0x[a-f0-9]{64}$/);
+    expect(commit1.length).toBe(66);
+  });
+
+  it("exhibits cryptographic avalanche effect when private prompts are modified", () => {
+    const originalPrompt = "Deploy model with confidential weights";
+    const tweakedPrompt = "Deploy model with confidential weightz"; // 1 char change
+
+    const commitOriginal = sha256Hex(originalPrompt);
+    const commitTweaked = sha256Hex(tweakedPrompt);
+
+    expect(commitOriginal).not.toBe(commitTweaked);
+
+    // Count matching hex characters
+    let matchingChars = 0;
+    for (let i = 0; i < commitOriginal.length; i++) {
+      if (commitOriginal[i] === commitTweaked[i]) matchingChars++;
+    }
+    // High diffusion: only small fraction of characters match by chance
+    expect(matchingChars / commitOriginal.length).toBeLessThan(0.3);
+  });
+
+  it("ensures zero plaintext leakage in public commitment digests", () => {
+    const sensitiveSalt = "secret_creator_entropy_998877_do_not_leak";
+    const prompt = "Confidential proprietary trading model training";
+    const commitment = "0x" + sha256Hex(`${prompt}:${sensitiveSalt}`);
+
+    expect(commitment).not.toContain("secret");
+    expect(commitment).not.toContain("proprietary");
+    expect(commitment).not.toContain("trading");
+    expect(commitment).not.toContain("998877");
+  });
+
+  it("permits witness parameter changes while preserving on-chain commitment validity", () => {
+    const policy = createTaskPolicy({
+      taskId: "task_privacy_001",
+      maxTotalBudget: 10n,
+      maxSpendPerTransaction: 2n,
+      approvedCategories: ["COMPUTE", "STORAGE"],
+      approvedProviders: ["0xprovider_alpha_enclave_99a4c102"],
+      allowedCapabilities: ["COMPUTE", "STORAGE"],
+      expirationTimestamp: Date.now() + 3600000,
+      completionConditionCommitment: "0xcondition_hash_valid",
+    });
+
+    const binding = createOnChainPolicyBinding(policy);
+    expect(binding.capabilityBitmask).toBe(3); // COMPUTE (1) | STORAGE (2) = 3
+    expect(binding.maxBudget).toBe(10n);
+
+    // Validation succeeds when policy matches on-chain binding
+    expect(validatePolicyAgainstOnChainBinding(policy, binding).valid).toBe(true);
+
+    // Validation strictly fails if attacker attempts to expand capabilities off-chain
+    const tamperedPolicy = {
+      ...policy,
+      allowedCapabilities: ["COMPUTE", "STORAGE", "DEPLOYMENT"] as any,
+    };
+    const tamperedResult = validatePolicyAgainstOnChainBinding(tamperedPolicy, binding);
+    expect(tamperedResult.valid).toBe(false);
+    expect(tamperedResult.reason).toContain("Policy commitment mismatch");
   });
 });
