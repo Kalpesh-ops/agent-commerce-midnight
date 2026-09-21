@@ -11,11 +11,14 @@
   "scripts": {
     "compile:contract": "npm run compile --prefix contract",
     "test:contract": "npm run test --prefix contract",
+    "test:ui": "npm run test --prefix ui",
+    "test": "npm run test:contract",
     "build:contract": "npm run build --prefix contract",
     "dev:ui": "npm run dev --prefix ui",
     "build:ui": "npm run build --prefix ui",
-    "test": "npm run test --prefix contract",
     "typecheck": "npm run typecheck --prefix contract && npm run typecheck --prefix ui",
+    "check:security": "node ./scripts/check-security.js",
+    "ci": "npm run typecheck && npm run compile:contract && npm run test && npm run build:ui && npm run check:security",
     "build": "npm run build:contract && npm run build:ui"
   },
   "devDependencies": {

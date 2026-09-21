@@ -51,15 +51,15 @@ export interface PactraProtocolState {
 }
 
 class PactraUiService {
-  private registry: ServiceRegistry;
-  private policy: TaskPolicy;
-  private onChainBinding: OnChainPolicyBinding;
-  private authority: AgentAuthorityManager;
-  private planner: AgentTaskPlanner;
-  private procurementEngine: ProcurementEngine;
-  private verifier: CompletionVerifier;
-  private arbitrationBoard: ArbitrationBoard;
-  private cityAdapter: MidnightCityAgentAdapter;
+  private registry!: ServiceRegistry;
+  private policy!: TaskPolicy;
+  private onChainBinding!: OnChainPolicyBinding;
+  private authority!: AgentAuthorityManager;
+  private planner!: AgentTaskPlanner;
+  private procurementEngine!: ProcurementEngine;
+  private verifier!: CompletionVerifier;
+  private arbitrationBoard!: ArbitrationBoard;
+  private cityAdapter!: MidnightCityAgentAdapter;
 
   private activePlan: TaskPlan | null = null;
   private latestEvidence: ExecutionEvidence | null = null;
@@ -68,6 +68,18 @@ class PactraUiService {
   private lastCityEvent: string | null = null;
 
   constructor() {
+    this.init();
+  }
+
+  public reset(): void {
+    this.init();
+  }
+
+  public resetAll(): void {
+    this.init();
+  }
+
+  private init(): void {
     this.registry = createDefaultServiceRegistry();
     this.planner = new AgentTaskPlanner();
     this.verifier = new CompletionVerifier();
@@ -124,6 +136,11 @@ class PactraUiService {
 
     this.procurementEngine = new ProcurementEngine(this.authority, this.registry);
     this.cityAdapter = new MidnightCityAgentAdapter(this.procurementEngine);
+    this.activePlan = null;
+    this.latestEvidence = null;
+    this.verificationResult = null;
+    this.dispute = null;
+    this.lastCityEvent = null;
   }
 
   public getState(): PactraProtocolState {
