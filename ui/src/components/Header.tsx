@@ -5,13 +5,14 @@ import { MidnightNetworkId } from "../types/midnight";
 interface HeaderProps {
   wallet: WalletState;
   isLiveMode: boolean;
-  contractAddress: string | null;
+  contractAddress?: string | null;
   onConnect: () => void;
-  onDisconnect?: () => void;
+  onDisconnect: () => void;
   onNetworkChange: (net: MidnightNetworkId) => void;
   onModeToggle: (mode: "live" | "demo") => void;
   onContractAddressChange: (addr: string) => void;
   onOpenGuide?: () => void;
+  onOpenFeedback?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNetworkChange,
   onModeToggle,
   onOpenGuide,
+  onOpenFeedback,
 }) => {
   const isConnecting = wallet.status === "CONNECTING";
   const isDetecting = wallet.status === "DETECTING";
@@ -48,6 +50,18 @@ export const Header: React.FC<HeaderProps> = ({
             >
               PREPROD TESTNET
             </span>
+            <span
+              style={{
+                fontSize: "10px",
+                color: "var(--text-dim)",
+                fontFamily: "var(--font-mono)",
+                background: "rgba(255, 255, 255, 0.04)",
+                padding: "2px 6px",
+                borderRadius: "4px",
+              }}
+            >
+              v0.5.0-preprod
+            </span>
           </div>
           <p className="brand-subtitle">Autonomous Agent Commerce & Escrow Protocol • Preprod MVP</p>
         </div>
@@ -62,6 +76,16 @@ export const Header: React.FC<HeaderProps> = ({
             title="Open Pactra user guide & architecture primer"
           >
             <span>📖</span> Guide
+          </button>
+        )}
+        {onOpenFeedback && (
+          <button
+            className="btn-secondary"
+            onClick={onOpenFeedback}
+            style={{ padding: "6px 12px", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}
+            title="Submit tester feedback & bug reports"
+          >
+            <span>💬</span> Feedback
           </button>
         )}
         {/* Visual Badge: strictly distinguishing Live Preprod from Demo */}
