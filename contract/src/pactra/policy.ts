@@ -31,8 +31,8 @@ export interface TaskPolicy {
   readonly approvedProviders: readonly string[];
   readonly allowedCapabilities: readonly AgentCapability[];
   readonly expirationTimestamp: number;
-  readonly completionConditionCommitment: string;
-  readonly salt: string;
+  readonly completionConditionCommitment?: string;
+  readonly salt?: string;
 }
 
 export class PolicyViolationError extends Error {
@@ -56,7 +56,7 @@ export function createTaskPolicy(params: {
   approvedProviders: string[];
   allowedCapabilities: AgentCapability[];
   expirationTimestamp: number;
-  completionConditionCommitment: string;
+  completionConditionCommitment?: string;
   salt?: string;
 }): TaskPolicy {
   const maxTotalBudget = BigInt(params.maxTotalBudget);
@@ -104,7 +104,7 @@ export function createTaskPolicy(params: {
     approvedProviders: Object.freeze([...params.approvedProviders]),
     allowedCapabilities: Object.freeze([...params.allowedCapabilities]),
     expirationTimestamp,
-    completionConditionCommitment: params.completionConditionCommitment,
+    completionConditionCommitment: params.completionConditionCommitment ?? "",
     salt,
   };
 }
@@ -183,7 +183,7 @@ export function createOnChainPolicyBinding(policy: TaskPolicy): OnChainPolicyBin
     maxBudget: policy.maxTotalBudget,
     maxSpendPerTransaction: policy.maxSpendPerTransaction,
     expirationTimestamp: policy.expirationTimestamp,
-    conditionRoot: policy.completionConditionCommitment,
+    conditionRoot: policy.completionConditionCommitment ?? "",
   };
 }
 
@@ -223,3 +223,5 @@ export function validatePolicyAgainstOnChainBinding(
 
   return { valid: true };
 }
+
+export type { TaskPolicyEnvelope } from "./agentClient.js";

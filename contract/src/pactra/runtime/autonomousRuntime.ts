@@ -128,6 +128,8 @@ export class PactraAutonomousRuntime {
             outputHash: evidencePayloadHash,
             evidenceSignature: `0xsig_${step.stepId}`,
             submittedAt: Date.now(),
+            executionDurationMs: 45,
+            timestamp: Date.now(),
             metrics: { durationMs: 45 },
           };
 

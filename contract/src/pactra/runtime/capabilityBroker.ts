@@ -13,7 +13,17 @@
 import { AgentCapability, TaskPolicyEnvelope, PolicyViolationError } from "../policy.js";
 import { AgentAuthorityManager } from "../authority.js";
 import { ServiceRegistry, ServiceListing } from "../registry.js";
-import { ServiceQuote, ProcurementRecord, ExecutionEvidence } from "../procurement.js";
+import { ProcurementRecord, ExecutionEvidence } from "../procurement.js";
+
+export interface BrokerServiceQuote {
+  readonly quoteId: string;
+  readonly serviceId: string;
+  readonly providerId: string;
+  readonly unitPrice: bigint;
+  readonly quotedAt: number;
+  readonly validUntil: number;
+  readonly slaTerms?: Record<string, unknown>;
+}
 
 export interface BoundedProcurementIntent {
   readonly serviceCategory: AgentCapability;
@@ -62,7 +72,7 @@ export class CapabilityBroker {
   /**
    * Evaluates a service quote against per-call and remaining budget limits.
    */
-  public evaluateQuote(serviceId: string): { quote: ServiceQuote; isPermitted: boolean } {
+  public evaluateQuote(serviceId: string): { quote: BrokerServiceQuote; isPermitted: boolean } {
     const listing = this.registry.getService(serviceId);
     if (!listing) {
       throw new PolicyViolationError("SERVICE_NOT_FOUND", `Service "${serviceId}" does not exist in registry.`);
@@ -82,7 +92,7 @@ export class CapabilityBroker {
       );
     }
 
-    const price = listing.pricing.unitPrice;
+    const price = (listing as any).pricing?.unitPrice ?? listing.unitPrice;
     if (price > this.envelope.policy.maxSpendPerTransaction) {
       throw new PolicyViolationError(
         "PER_TRANSACTION_LIMIT_EXCEEDED",
@@ -98,14 +108,14 @@ export class CapabilityBroker {
       );
     }
 
-    const quote: ServiceQuote = {
+    const quote: BrokerServiceQuote = {
       quoteId: `quote_${Date.now()}_${serviceId}`,
       serviceId,
-      providerId: listing.providerPublicKey,
+      providerId: (listing as any).providerPublicKey ?? listing.providerCommitment,
       unitPrice: price,
       quotedAt: Date.now(),
       validUntil: Date.now() + 60000,
-      slaTerms: listing.sla,
+      slaTerms: (listing as any).sla ?? (listing.evidenceRequirement ? { maxExecutionDurationMs: listing.evidenceRequirement.maxDurationSeconds * 1000 } : undefined),
     };
 
     return { quote, isPermitted: true };
@@ -118,12 +128,11 @@ export class CapabilityBroker {
     const { quote } = this.evaluateQuote(intent.serviceId);
 
     const token = this.authority.authorizeProcurement({
-      procurementId: `proc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      taskId: this.envelope.policy.taskId,
       providerId: intent.serviceId,
       serviceCategory: intent.serviceCategory,
       capability: intent.serviceCategory,
       requestedAmount: quote.unitPrice,
+      objectiveRef: `objective_${this.envelope.policy.taskId}`,
     });
 
     return { token, quote };

@@ -45,11 +45,14 @@ export interface ExecutionEvidence {
   readonly jobId: string;
   readonly providerCommitment: string;
   readonly outputHash: string;
-  readonly executionDurationMs: number;
+  readonly executionDurationMs?: number;
   readonly costIncurred: bigint;
   readonly evidenceSignature: string;
-  readonly timestamp: number;
+  readonly timestamp?: number;
   readonly capability?: AgentCapability;
+  readonly procurementId?: string;
+  readonly submittedAt?: number;
+  readonly metrics?: Record<string, unknown>;
 }
 
 export interface ProcurementRecord {

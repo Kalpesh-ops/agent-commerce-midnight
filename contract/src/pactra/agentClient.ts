@@ -23,13 +23,15 @@ import {
 import { ObjectiveConditionSpec } from "./verifier.js";
 
 export interface TaskPolicyEnvelope {
-  readonly taskId: string;
-  readonly objective: string;
+  readonly taskId?: string;
+  readonly objective?: string;
   readonly policy: TaskPolicy;
-  readonly allowedCapabilities: readonly AgentCapability[];
-  readonly allowedProviders: readonly string[];
-  readonly budget: AgentOperatingBudget;
+  readonly allowedCapabilities?: readonly AgentCapability[];
+  readonly allowedProviders?: readonly string[];
+  readonly budget?: AgentOperatingBudget;
   readonly completionConditions: ObjectiveConditionSpec;
+  readonly policyCommitment?: string;
+  readonly issuedAt?: number;
 }
 
 export interface ServiceQuote {
@@ -70,8 +72,8 @@ export class PactraAgentClient {
     this.authority =
       authority ??
       new AgentAuthorityManager({
-        userTreasuryTotal: envelope.budget.userTreasuryTotal,
-        taskEscrowAllocation: envelope.budget.taskEscrowAllocation,
+        userTreasuryTotal: envelope.budget?.userTreasuryTotal ?? envelope.policy.maxTotalBudget * 2n,
+        taskEscrowAllocation: envelope.budget?.taskEscrowAllocation ?? envelope.policy.maxTotalBudget,
         policy: envelope.policy,
       });
     this.engine = engine ?? new ProcurementEngine(this.authority, this.registry);
@@ -105,8 +107,10 @@ export class PactraAgentClient {
       throw new PolicyViolationError("SERVICE_NOT_FOUND", `Service "${serviceId}" does not exist.`);
     }
 
-    const isCapabilityAllowed = this.envelope.allowedCapabilities.includes(service.category);
-    const isProviderAllowed = this.envelope.allowedProviders.includes(service.providerCommitment);
+    const allowedCaps = this.envelope.allowedCapabilities ?? this.envelope.policy.allowedCapabilities;
+    const allowedProvs = this.envelope.allowedProviders ?? this.envelope.policy.approvedProviders;
+    const isCapabilityAllowed = allowedCaps.includes(service.category);
+    const isProviderAllowed = allowedProvs.length === 0 || allowedProvs.includes(service.providerCommitment) || (service.providerPublicKey !== undefined && allowedProvs.includes(service.providerPublicKey));
     const budgetSnapshot = this.authority.getBudgetSnapshot();
     const isWithinBudget =
       service.unitPrice <= budgetSnapshot.remainingBudget &&
@@ -173,8 +177,8 @@ export class PactraAgentClient {
     const isExpired = Date.now() > this.envelope.policy.expirationTimestamp;
 
     return {
-      taskId: this.envelope.taskId,
-      objective: this.envelope.objective,
+      taskId: this.envelope.taskId ?? this.envelope.policy.taskId,
+      objective: this.envelope.objective ?? "Autonomous Task",
       currentSpent: snapshot.currentSpent,
       remainingBudget: snapshot.remainingBudget,
       totalEscrowAllocation: snapshot.taskEscrowAllocation,

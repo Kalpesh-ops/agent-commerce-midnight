@@ -21,7 +21,9 @@ export interface ProcurementRequest {
   readonly providerId: string;
   readonly requestedAmount: bigint;
   readonly serviceCategory: AgentCapability;
-  readonly objectiveRef: string;
+  readonly objectiveRef?: string;
+  readonly procurementId?: string;
+  readonly taskId?: string;
 }
 
 export interface AuthorizedProcurementToken {

@@ -1,6 +1,6 @@
-# Pactra Release & Deployment Checklist (v0.5.0-preprod)
+# Pactra Release & Deployment Checklist (v0.6.0-eclipse)
 
-This checklist specifies the required verification gates and deployment procedure for publishing releases of **Pactra** on Midnight Preprod.
+This checklist specifies the required verification gates and deployment procedure for publishing releases of **Pactra** on Midnight Preprod and staging Mainnet deployments.
 
 ---
 
@@ -12,7 +12,7 @@ All checks must pass with zero warnings or errors prior to tag creation or publi
 # 1. Static Type Checking (contract & ui packages)
 npm run typecheck
 
-# 2. Automated Test Suite (All 111+ tests passing)
+# 2. Automated Test Suite (All 164+ tests passing across 17 suites)
 npm run test
 
 # 3. Compact Smart Contract Compilation

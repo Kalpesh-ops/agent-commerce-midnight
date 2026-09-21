@@ -12,13 +12,16 @@ import { sha256Hex } from "./cryptoUtils.js";
 import { ExecutionEvidence } from "./procurement.js";
 
 export interface ObjectiveConditionSpec {
-  readonly expectedJobId: string;
-  readonly expectedProviderCommitment: string;
+  readonly expectedJobId?: string;
+  readonly expectedProviderCommitment?: string;
   readonly expectedResultCommitment?: string;
-  readonly maxAllowedCost: bigint;
-  readonly isSubjectiveTask: boolean;
-  readonly externalVerifierRequired: boolean;
-  readonly verifierDescription: string;
+  readonly maxAllowedCost?: bigint;
+  readonly isSubjectiveTask?: boolean;
+  readonly externalVerifierRequired?: boolean;
+  readonly verifierDescription?: string;
+  readonly conditionHash?: string;
+  readonly requiredArtifacts?: readonly string[];
+  readonly verificationMethod?: string;
 }
 
 export interface VerificationResult {
@@ -54,11 +57,11 @@ export class CompletionVerifier {
    */
   public computeConditionCommitment(spec: ObjectiveConditionSpec): string {
     const payload = JSON.stringify({
-      expectedJobId: spec.expectedJobId,
-      expectedProviderCommitment: spec.expectedProviderCommitment,
+      expectedJobId: spec.expectedJobId ?? "",
+      expectedProviderCommitment: spec.expectedProviderCommitment ?? "",
       expectedResultCommitment: spec.expectedResultCommitment ?? "any_valid_hash",
-      maxAllowedCost: spec.maxAllowedCost.toString(),
-      isSubjective: spec.isSubjectiveTask,
+      maxAllowedCost: (spec.maxAllowedCost ?? 0n).toString(),
+      isSubjective: Boolean(spec.isSubjectiveTask),
     });
     return "0x" + sha256Hex(payload);
   }
@@ -84,15 +87,15 @@ export class CompletionVerifier {
           resultMatchesCommitment: false,
           evidenceFormatValid: false,
         },
-        requiresHumanSignoff: spec.externalVerifierRequired,
+        requiresHumanSignoff: Boolean(spec.externalVerifierRequired),
         failureReason: "No execution evidence was submitted.",
         verifiedAt: Date.now(),
       };
     }
 
-    const jobIdMatches = evidence.jobId === spec.expectedJobId;
-    const providerAuthorized = evidence.providerCommitment === spec.expectedProviderCommitment;
-    const withinCostBound = evidence.costIncurred <= spec.maxAllowedCost;
+    const jobIdMatches = !spec.expectedJobId || evidence.jobId === spec.expectedJobId;
+    const providerAuthorized = !spec.expectedProviderCommitment || evidence.providerCommitment === spec.expectedProviderCommitment;
+    const withinCostBound = spec.maxAllowedCost !== undefined ? evidence.costIncurred <= spec.maxAllowedCost : true;
     const evidenceFormatValid =
       Boolean(evidence.outputHash) &&
       evidence.outputHash.startsWith("0x") &&
@@ -128,7 +131,7 @@ export class CompletionVerifier {
         resultMatchesCommitment,
         evidenceFormatValid,
       },
-      requiresHumanSignoff: spec.isSubjectiveTask || spec.externalVerifierRequired,
+      requiresHumanSignoff: Boolean(spec.isSubjectiveTask || spec.externalVerifierRequired),
       failureReason,
       verifiedAt: Date.now(),
     };

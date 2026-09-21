@@ -60,7 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
                 borderRadius: "4px",
               }}
             >
-              v0.5.0-preprod
+              v0.6.0-eclipse
             </span>
           </div>
           <p className="brand-subtitle">Autonomous Agent Commerce & Escrow Protocol • Preprod MVP</p>

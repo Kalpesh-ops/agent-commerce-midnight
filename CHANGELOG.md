@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.0-eclipse] - 2026-09-21
+
+### Level 6: Eclipse — Mainnet Hardening & Autonomous Swarm Economy
+
+#### Added
+- **Audit Readiness Package**: Full architecture and circuit documentation in `docs/audit-package.md` verifying 10 formal security and balance invariants.
+- **Autonomous Headless Agent Runtime**: Complete server-side runtime (`AutonomousAgentRuntime`) and `CapabilityBroker` with 13 deterministic lifecycle states, exponential backoff failure handling, and deadline enforcement.
+- **Midnight Proof Server Adapter**: Typed, zero-leakage integration adapter (`MidnightProofServerAdapter`) featuring latency probes, timeout recovery, circuit proof orchestration, and explicit `NOT_CONFIGURED` fail-safe.
+- **Decentralized Arbitration Engine**: 2-of-3 threshold consensus dispute engine (`DecentralizedArbitrationEngine`) supporting 6 arbitrator lifecycle states, evidence commitments, slashing penalties for contradictory double votes, and timelocked withdrawals.
+- **Strict Multi-Network Separation**: Environment definitions (`LOCAL`, `PREPROD`, `MAINNET`) with hard `NetworkGuards` preventing silent network fallbacks or cross-environment leakage.
+- **Agent-to-Agent Swarm Economy**: Multi-agent coordination tree (`PactraSwarmCoordinator`) enabling Planner agents to delegate sub-envelopes to specialized service agents (Compute, Storage, etc.) within strict budget and capability boundaries.
+- **Extended MCP Tool Interface**: Added `pactra_request_dispute` tool definition and autonomous handler for programmatic dispute escalation.
+- **Production Health Layer**: `ProductionHealthMonitor` service and `SystemHealthPanel` UI component tracking indexer latency, proof server status, and circuit health without logging private keys, prompts, or sensitive task data.
+- **Chaos & Failure Testing Suite**: Dedicated simulation suite (`pactra-chaos-failure.test.ts`) covering provider dropouts, indexer downtime, prover timeouts, and tampered evidence.
+- **Mainnet Deployment Manual**: 11-step reproducible deployment pipeline and rollback manual (`docs/mainnet-deployment.md`).
+
+#### Changed
+- Total automated tests expanded to **164 passing tests across 17 suites** with zero regressions.
+- UI Header and network indicators enhanced to support dynamic network switching and status alerts.
+
+#### Security
+- Verified zero private keys or seed phrases exposed to agent runtime, MCP tools, or telemetry payloads.
+- Mainnet readiness strictly guarded: no fake mainnet transactions, users, or proofs claimed.
+
+---
+
 ## [0.5.0-preprod] - 2026-09-21
 
 ### Level 5: Full Moon — External Users & Feedback Loop

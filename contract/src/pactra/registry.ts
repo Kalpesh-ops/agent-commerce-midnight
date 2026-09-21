@@ -42,25 +42,55 @@ export interface ServiceDefinition {
   readonly status: ServiceStatus;
   readonly description?: string;
   readonly metadataUri?: string;
+  readonly providerPublicKey?: string;
+  readonly pricing?: { unitPrice: bigint; maxPrice?: bigint; baseFee?: bigint; model?: string };
+  readonly sla?: Record<string, unknown>;
+  readonly reputationScore?: number;
+  readonly registeredAt?: number;
 }
+
+export type ServiceRegistrationInput = Partial<ServiceDefinition> & {
+  serviceId: string;
+  name: string;
+  category: AgentCapability;
+  status: ServiceStatus;
+};
+
+export type ServiceListing = ServiceDefinition | ServiceRegistrationInput;
 
 export class ServiceRegistry {
   private services = new Map<string, ServiceDefinition>();
 
-  constructor(initialServices: ServiceDefinition[] = []) {
+  constructor(initialServices: (ServiceDefinition | ServiceRegistrationInput)[] = []) {
     for (const service of initialServices) {
       this.registerService(service);
     }
   }
 
-  public registerService(service: ServiceDefinition): void {
-    if (service.unitPrice <= 0n) {
+  public getServicesByCategory(category: AgentCapability): ServiceDefinition[] {
+    return this.listAllServices().filter((s: ServiceDefinition) => s.category === category);
+  }
+
+  public registerService(service: ServiceDefinition | ServiceRegistrationInput): void {
+    const unitPrice = service.unitPrice ?? service.pricing?.unitPrice ?? 100n;
+    const maxPrice = service.maxPrice ?? service.pricing?.maxPrice ?? unitPrice * 2n;
+    const providerCommitment = service.providerCommitment ?? service.providerPublicKey ?? `0xprovider_${service.serviceId}`;
+    const verificationMethod = service.verificationMethod ?? "EXECUTION_EVIDENCE";
+
+    if (unitPrice <= 0n) {
       throw new PolicyViolationError("INVALID_SERVICE_PRICE", "Unit price must be greater than zero.");
     }
-    if (service.maxPrice < service.unitPrice) {
+    if (maxPrice < unitPrice) {
       throw new PolicyViolationError("INVALID_MAX_PRICE", "Maximum price cannot be lower than unit price.");
     }
-    this.services.set(service.serviceId, { ...service });
+    const def: ServiceDefinition = {
+      ...service,
+      unitPrice,
+      maxPrice,
+      providerCommitment,
+      verificationMethod,
+    };
+    this.services.set(service.serviceId, def);
   }
 
   public updateServicePrice(serviceId: string, newUnitPrice: bigint, newMaxPrice?: bigint): void {

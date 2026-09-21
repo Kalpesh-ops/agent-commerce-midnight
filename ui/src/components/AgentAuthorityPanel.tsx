@@ -92,7 +92,7 @@ export const AgentAuthorityPanel: React.FC<AgentAuthorityPanelProps> = ({
       );
       refreshState();
       onLog(
-        `Execution evidence received! Output Hash: ${evidence.outputHash.slice(0, 18)}... Duration: ${(evidence.executionDurationMs / 1000).toFixed(1)}s`,
+        `Execution evidence received! Output Hash: ${evidence.outputHash.slice(0, 18)}... Duration: ${(((evidence.executionDurationMs ?? 0) / 1000)).toFixed(1)}s`,
         "success"
       );
     } catch (err: any) {
@@ -456,7 +456,7 @@ export const AgentAuthorityPanel: React.FC<AgentAuthorityPanelProps> = ({
               <div>Job ID: {pactraState.latestEvidence.jobId}</div>
               <div>Provider: {pactraState.latestEvidence.providerCommitment}</div>
               <div>Output Hash: {pactraState.latestEvidence.outputHash}</div>
-              <div>Duration: {(pactraState.latestEvidence.executionDurationMs / 1000).toFixed(1)}s</div>
+              <div>Duration: {(((pactraState.latestEvidence.executionDurationMs ?? 0) / 1000)).toFixed(1)}s</div>
               <div>Cost Incurred: {pactraState.latestEvidence.costIncurred.toString()} DUST</div>
             </div>
           </div>
