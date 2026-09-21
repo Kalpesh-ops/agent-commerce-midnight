@@ -5,4 +5,5 @@ export * from "./registry.js";
 export * from "./planner.js";
 export * from "./procurement.js";
 export * from "./verifier.js";
+export * from "./arbitration.js";
 export * from "./midnightCityAdapter.js";
