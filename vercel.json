@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "name": "pactra-protocol",
   "buildCommand": "npm run build:contract && npm run build:ui",
   "outputDirectory": "ui/dist",
   "framework": "vite",
