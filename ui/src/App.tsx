@@ -13,6 +13,9 @@ import { SafetyBanner } from "./components/SafetyBanner";
 import { FeedbackModal } from "./components/FeedbackModal";
 import { ProductMetricsView } from "./components/ProductMetricsView";
 import { FeedbackDashboard } from "./components/FeedbackDashboard";
+import { NetworkBadge } from "./components/NetworkBadge";
+import { SystemHealthPanel } from "./components/SystemHealthPanel";
+import { getEnvironmentConfig, UiEnvironmentConfig } from "./config/network";
 import { walletService, WalletState } from "./services/wallet";
 import { escrowService, EscrowContractData } from "./services/escrowService";
 import { contractClient, TxLifecycleEvent } from "./services/contractClient";
@@ -20,8 +23,9 @@ import { MidnightNetworkId } from "./types/midnight";
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
-    "protocol" | "compute" | "marketplace" | "arbitration" | "privacy" | "metrics" | "feedback_dev"
+    "protocol" | "compute" | "marketplace" | "arbitration" | "privacy" | "metrics" | "feedback_dev" | "health"
   >("protocol");
+  const [currentEnv, setCurrentEnv] = useState<UiEnvironmentConfig>(getEnvironmentConfig("PREPROD"));
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState<boolean>(false);
   const [wallet, setWallet] = useState<WalletState>(walletService.getState());
@@ -444,6 +448,14 @@ export const App: React.FC = () => {
             <span style={{ fontSize: "10px" }}>{isIndexerLive ? "●" : "○"}</span>
             <span>Preprod Indexer: {isIndexerLive ? "Online (Epoch Active)" : "Querying Indexer..."}</span>
           </div>
+          <NetworkBadge
+            currentEnv={currentEnv}
+            detectedWalletNetwork={wallet.activeNetwork || wallet.networkId}
+            onSwitchEnv={(envId) => {
+              setCurrentEnv(getEnvironmentConfig(envId));
+              addLog(`Switched network target to ${envId}`, "info");
+            }}
+          />
         </div>
       </section>
 
@@ -492,6 +504,13 @@ export const App: React.FC = () => {
           onClick={() => setActiveTab("privacy")}
         >
           🛡️ Privacy & State Boundaries
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "health" ? "active" : ""}`}
+          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
+          onClick={() => setActiveTab("health")}
+        >
+          🩺 System Health & Network
         </button>
         <button
           className={`tab-btn ${activeTab === "metrics" ? "active" : ""}`}
@@ -567,6 +586,15 @@ export const App: React.FC = () => {
 
       {activeTab === "privacy" && (
         <PrivacyModelInspector />
+      )}
+
+      {activeTab === "health" && (
+        <SystemHealthPanel
+          currentEnv={currentEnv}
+          isWalletConnected={wallet.status === "CONNECTED"}
+          walletNetwork={wallet.activeNetwork || wallet.networkId}
+          activeContractAddress={escrowState.contractAddress}
+        />
       )}
 
       {activeTab === "metrics" && (

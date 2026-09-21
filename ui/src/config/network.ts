@@ -61,3 +61,7 @@ export function getActiveUiEnvironment(): UiEnvironmentConfig {
 export function setActiveUiEnvironment(env: UiEnvironmentId): void {
   localStorage.setItem(STORAGE_KEY, env);
 }
+
+export function getEnvironmentConfig(env: UiEnvironmentId): UiEnvironmentConfig {
+  return UI_ENVIRONMENTS[env] || UI_ENVIRONMENTS.PREPROD;
+}
