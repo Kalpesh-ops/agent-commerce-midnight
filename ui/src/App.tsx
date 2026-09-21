@@ -8,13 +8,14 @@ import { MarketplaceView } from "./components/MarketplaceView";
 import { ArbitrationPanel } from "./components/ArbitrationPanel";
 import { PrivacyModelInspector } from "./components/PrivacyModelInspector";
 import { OnboardingModal } from "./components/OnboardingModal";
+import { ComputeGuidedDemo } from "./components/ComputeGuidedDemo";
 import { walletService, WalletState } from "./services/wallet";
 import { escrowService, EscrowContractData } from "./services/escrowService";
 import { contractClient, TxLifecycleEvent } from "./services/contractClient";
 import { MidnightNetworkId } from "./types/midnight";
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<"protocol" | "marketplace" | "arbitration" | "privacy">("protocol");
+  const [activeTab, setActiveTab] = useState<"protocol" | "compute" | "marketplace" | "arbitration" | "privacy">("protocol");
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
   const [wallet, setWallet] = useState<WalletState>(walletService.getState());
   const [escrowState, setEscrowState] = useState<EscrowContractData>(escrowService.getState());
@@ -338,7 +339,7 @@ export const App: React.FC = () => {
         }}
         onStartGuide={() => {
           setIsOnboardingOpen(false);
-          setActiveTab("protocol");
+          setActiveTab("compute");
           try {
             localStorage.setItem("pactra_onboarding_shown", "true");
           } catch {
@@ -417,6 +418,13 @@ export const App: React.FC = () => {
           🏛️ Task & Protocol
         </button>
         <button
+          className={`tab-btn ${activeTab === "compute" ? "active" : ""}`}
+          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
+          onClick={() => setActiveTab("compute")}
+        >
+          ⚡ Guided Compute MVP
+        </button>
+        <button
           className={`tab-btn ${activeTab === "marketplace" ? "active" : ""}`}
           style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
           onClick={() => setActiveTab("marketplace")}
@@ -473,6 +481,13 @@ export const App: React.FC = () => {
             isMidnightBusy={Boolean(txLifecycle && ["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(txLifecycle.status))}
           />
         </>
+      )}
+
+      {activeTab === "compute" && (
+        <ComputeGuidedDemo
+          onLog={addLog}
+          onNavigateToEscrow={() => setActiveTab("protocol")}
+        />
       )}
 
       {activeTab === "marketplace" && (
