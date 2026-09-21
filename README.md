@@ -5,6 +5,7 @@
 > *"Give an agent a goal and bounded economic authority — not your wallet."*
 
 [![Pactra Protocol CI](https://github.com/Kalpesh-ops/agent-commerce-midnight/actions/workflows/ci.yaml/badge.svg)](https://github.com/Kalpesh-ops/agent-commerce-midnight/actions/workflows/ci.yaml)
+[![Live Demo](https://img.shields.io/badge/Live%20DApp-pactra--protocol.vercel.app-blueviolet.svg)](https://pactra-protocol.vercel.app)
 [![Midnight Network](https://img.shields.io/badge/Network-Midnight%20Preprod%20%7C%20Mainnet%20Ready-7045ff.svg)](https://midnight.network)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Tests Passing](https://img.shields.io/badge/Tests-164%20Passing-00e699.svg)](contract/src/test)

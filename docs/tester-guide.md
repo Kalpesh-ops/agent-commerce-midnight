@@ -39,7 +39,7 @@ Follow these 10 steps to test Pactra from scratch without needing to read reposi
 
 ### Step 4: Open Pactra
 - Access the deployed public dApp or launch locally:
-  - Public URL: `https://agent-commerce-midnight.vercel.app` (or your team's deployment URL)
+  - Public Production URL: `https://pactra-protocol.vercel.app` (Alternative alias: `https://pactra-midnight.vercel.app`)
   - Local URL: `http://localhost:3000`
 - Confirm that the top banner displays: `MIDNIGHT PREPROD / TESTNET` and version `v0.5.0-preprod`.
 
