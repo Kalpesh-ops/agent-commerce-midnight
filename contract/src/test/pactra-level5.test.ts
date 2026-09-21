@@ -13,6 +13,17 @@ describe("Pactra Level 5: Reliability, Error Hardening & Tester Safety Invariant
   let client: PactraAgentClient;
 
   beforeEach(() => {
+    const verifier = new CompletionVerifier();
+    const conditionCommitment = verifier.computeConditionCommitment({
+      expectedJobId: "job_tester_e2e_01",
+      expectedProviderCommitment: "0xprovider_alpha_enclave_99a4c102",
+      expectedResultCommitment: undefined,
+      maxAllowedCost: 5n,
+      isSubjectiveTask: false,
+      externalVerifierRequired: false,
+      verifierDescription: "Level 5 Verifier",
+    });
+
     const policy = createTaskPolicy({
       taskId: "task_l5_tester_001",
       maxTotalBudget: 15n,
@@ -21,6 +32,7 @@ describe("Pactra Level 5: Reliability, Error Hardening & Tester Safety Invariant
       approvedProviders: ["0xprovider_alpha_enclave_99a4c102"],
       allowedCapabilities: ["COMPUTE", "STORAGE", "API_CALL"],
       expirationTimestamp: Date.now() + 86400000,
+      completionConditionCommitment: conditionCommitment,
     });
 
     envelope = {
@@ -36,6 +48,15 @@ describe("Pactra Level 5: Reliability, Error Hardening & Tester Safety Invariant
         remainingBudget: 15n,
         perTransactionLimit: 5n,
       },
+      completionConditions: {
+        expectedJobId: "job_tester_e2e_01",
+        expectedProviderCommitment: "0xprovider_alpha_enclave_99a4c102",
+        expectedResultCommitment: undefined,
+        maxAllowedCost: 5n,
+        isSubjectiveTask: false,
+        externalVerifierRequired: false,
+        verifierDescription: "Level 5 Verifier",
+      },
     };
 
     const registry = createDefaultServiceRegistry();
@@ -49,7 +70,7 @@ describe("Pactra Level 5: Reliability, Error Hardening & Tester Safety Invariant
       expect(envelope.policy.maxTotalBudget).toBe(15n);
 
       // Step 2: Discover approved compute services
-      const services = await client.discoverServices({ category: "COMPUTE", maxUnitPrice: 5 });
+      const services = await client.discoverServices({ category: "COMPUTE", maxUnitPrice: 5n });
       expect(services.length).toBeGreaterThan(0);
       const targetService = services[0];
       expect(targetService.category).toBe("COMPUTE");
@@ -178,8 +199,9 @@ describe("Pactra Level 5: Reliability, Error Hardening & Tester Safety Invariant
         category: "COMPUTE",
         providerCommitment: "0xprovider_alpha_enclave_99a4c102",
         unitPrice: 10n, // Exceeds perTransactionLimit of 5n
+        maxPrice: 10n,
         pricingModel: "PER_CALL",
-        verificationMethod: "ENCLAVE_ATTESTATION",
+        verificationMethod: "EXECUTION_EVIDENCE",
         status: "ACTIVE",
       });
 

@@ -81,10 +81,13 @@ export const App: React.FC = () => {
     });
   }, [addLog]);
 
-  // 3. Preprod Indexer Health Verification
+  // 3. Preprod Indexer Health Verification with Visibility-Aware Debouncing
   useEffect(() => {
     let isMounted = true;
     const verifyIndexer = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return; // Suspend background HTTP requests when tab is inactive
+      }
       try {
         const res = await fetch("https://indexer.preprod.midnight.network/api/v4/graphql", {
           method: "POST",
@@ -101,10 +104,19 @@ export const App: React.FC = () => {
     };
 
     verifyIndexer();
-    const interval = setInterval(verifyIndexer, 20000);
+    const interval = setInterval(verifyIndexer, 25000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        verifyIndexer();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       isMounted = false;
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 
