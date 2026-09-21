@@ -1,11 +1,24 @@
 # Pactra — Privacy-Preserving Economic Operating Layer for Autonomous AI Agents
 
-> **Level 3 Production Protocol**: A generalized, privacy-first economic operating system built on the Midnight Network for autonomous AI agents. Enables bounded resource procurement, cryptographic policy enforcement, multi-party threshold arbitration, and zero-knowledge escrow settlement without giving agents custody of user funds.
+> **Level 4 Public Preprod MVP**: A privacy-first economic operating system built on the **Midnight Network** for autonomous AI agents. Enables bounded resource procurement, cryptographic policy enforcement, Model Context Protocol (MCP) tool integration, M-of-N threshold arbitration, and zero-knowledge escrow settlement without giving agents custody of user wallets.
+>
+> *"Give an agent a goal and bounded economic authority — not your wallet."*
 
-[![Pactra Protocol CI](https://github.com/kalpeshparashar/agent-commerce-midnight/actions/workflows/ci.yaml/badge.svg)](https://github.com/kalpeshparashar/agent-commerce-midnight/actions/workflows/ci.yaml)
+[![Pactra Protocol CI](https://github.com/Kalpesh-ops/agent-commerce-midnight/actions/workflows/ci.yaml/badge.svg)](https://github.com/Kalpesh-ops/agent-commerce-midnight/actions/workflows/ci.yaml)
 [![Midnight Network](https://img.shields.io/badge/Network-Midnight%20Preprod-7045ff.svg)](https://midnight.network)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests Passing](https://img.shields.io/badge/Tests-70%20Passing-00e699.svg)](contract/src/test)
+[![Tests Passing](https://img.shields.io/badge/Tests-90%20Passing-00e699.svg)](contract/src/test)
+
+---
+
+## Documentation Suite
+
+- 📖 **[User Guide & Tester Manual](docs/user-guide.md)**: Step-by-step instructions to connect Midnight Lace, fund via Nethermind Faucet, and run tasks on Preprod.
+- 🛡️ **[Privacy Architecture & State Boundaries](docs/privacy.md)**: Deep dive into Midnight ZK dual-state proofs vs. application-layer privacy.
+- 🤖 **[Model Context Protocol (MCP) Specification](docs/mcp.md)**: Autonomous agent integration guide for Claude, Cursor, and custom agent runtimes.
+- 🌌 **[Midnight Challenge Submission](docs/idea-submission.md)**: Official problem statement, architectural vision, and hackathon evaluation criteria.
+- 📣 **[Public Presence & Social Profile](docs/social-profile.md)**: Official branding, X/Twitter copy, and challenge metadata.
+- 📝 **[Tester Feedback Channel](docs/feedback.md)**: Structured review template and bug reporting log.
 
 ---
 

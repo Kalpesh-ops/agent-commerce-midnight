@@ -136,15 +136,18 @@ A foundational rule of Pactra is: **The agent NEVER declares its own success.**
 
 ---
 
-### 7. Current Implementation Status (Level 3 Complete)
+### 7. Current Implementation Status (Level 4 Public Preprod MVP Complete)
 
-Pactra is an active, functional dApp with zero simulation mockups in production paths:
+Pactra is an active, fully functional dApp with zero simulation mockups in production paths:
 
 * **Compact Smart Contract:** Fully compiled with the official Midnight compiler (`0.23`) across 6 ZK circuits (`createTask`, `fundTask`, `acceptTask`, `submitCompletion`, `settleTask`, `refundTask`).
 * **Midnight Preprod Integration:** Connected to the Midnight Preprod testnet via the official Midnight Lace wallet connector (`window.midnight.mnLace`) and the live GraphQL Indexer (`https://indexer.preprod.midnight.network/api/v4/graphql`).
-* **Test Coverage:** **70 unit and integration tests** passing across smart contract primitives, multi-service procurement, policy invariants, arbitration voting, and UI service state machines.
+* **End-to-End Compute MVP:** Interactive 9-step guided walkthrough demonstrating task creation, bounded policy authorization, compute enclave procurement, evidence generation, objective verification, and settlement.
+* **Model Context Protocol (MCP) Adapter:** Standardized 5-tool MCP abstraction (`pactra_discover_services`, `pactra_get_quote`, `pactra_request_procurement`, `pactra_submit_evidence`, `pactra_get_task_status`) allowing Claude, Cursor, and LLM runtimes to procure resources under cryptographic constraints without private key custody.
+* **Privacy Boundary Simulator:** Interactive dual-state visualizer demonstrating zero-knowledge state isolation (shielded prompt preimages vs. public on-chain commitments).
+* **Test Coverage:** **90 unit and integration tests** passing across smart contract primitives, agent APIs, MCP schemas, privacy invariants, arbitration voting, and UI service state machines.
 * **Automated CI/CD:** GitHub Actions workflow with strict automated quality gates enforcing typechecking, contract compilation, test suites, and secret scanning.
-* **Security Guardrails:** Static code analyzers preventing uncommitted private keys, seed phrases, or generic treasury-drain methods from entering the repository.
+* **Security Guardrails:** Static code analyzers preventing uncommitted private keys, seed phrases, or generic treasury-drain methods from entering the codebase.
 
 ---
 
