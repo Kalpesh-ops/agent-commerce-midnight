@@ -1,23 +1,26 @@
 # Pactra — Privacy-Preserving Economic Operating Layer for Autonomous AI Agents
 
-> **Level 5: Full Moon — External Users & Feedback Loop**: A privacy-first economic operating system built on the **Midnight Network** for autonomous AI agents. Enables bounded resource procurement, cryptographic policy enforcement, Model Context Protocol (MCP) tool integration, M-of-N threshold arbitration, and zero-knowledge escrow settlement without giving agents custody of user wallets.
+> **Level 6: Eclipse — Mainnet Hardening & Autonomous Swarm Economy**: A privacy-first economic operating system built on the **Midnight Network** for autonomous AI agents. Features a headless server-side agent runtime, capability broker, decentralized 2-of-3 threshold arbitration with staking/slashing, strict multi-network separation, Midnight proof server integration, MCP dispute tools, and zero-knowledge escrow settlement without giving agents custody of user wallets.
 >
 > *"Give an agent a goal and bounded economic authority — not your wallet."*
 
 [![Pactra Protocol CI](https://github.com/Kalpesh-ops/agent-commerce-midnight/actions/workflows/ci.yaml/badge.svg)](https://github.com/Kalpesh-ops/agent-commerce-midnight/actions/workflows/ci.yaml)
-[![Midnight Network](https://img.shields.io/badge/Network-Midnight%20Preprod-7045ff.svg)](https://midnight.network)
+[![Midnight Network](https://img.shields.io/badge/Network-Midnight%20Preprod%20%7C%20Mainnet%20Ready-7045ff.svg)](https://midnight.network)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests Passing](https://img.shields.io/badge/Tests-111%20Passing-00e699.svg)](contract/src/test)
-[![Version](https://img.shields.io/badge/Release-v0.5.0--preprod-orange.svg)](CHANGELOG.md)
+[![Tests Passing](https://img.shields.io/badge/Tests-164%20Passing-00e699.svg)](contract/src/test)
+[![Version](https://img.shields.io/badge/Release-v0.6.0--eclipse-orange.svg)](CHANGELOG.md)
 
 ---
 
 ## Documentation Suite
 
+- 🌑 **[Level 6 Specification](docs/level6-eclipse.md)**: Mainnet hardening, headless runtime, decentralized arbitration, and multi-agent swarm architecture.
+- 🛡️ **[Third-Party Audit Package](docs/audit-package.md)**: Formal circuit analysis, state transitions, threat model, and 10 formal security invariant proofs.
+- 🚀 **[Mainnet Deployment Manual](docs/mainnet-deployment.md)**: 11-stage reproducible deployment pipeline, hash verification, and rollback procedures.
 - 🧪 **[External Tester Guide](docs/tester-guide.md)**: 10-step reproducible testing protocol on Midnight Preprod with troubleshooting.
 - 💬 **[Tester Feedback Channel](docs/feedback.md)**: Structured review template and bug reporting guidelines.
 - 📋 **[Feedback & Iteration Log](docs/feedback-log.md)**: Real audit findings, issue tracking, and product improvements loop.
-- 🔒 **[Level 5 Security Review](docs/security-review.md)**: Threat model, non-custodial boundaries, and automated audit scanner findings.
+- 🔒 **[Security Review](docs/security-review.md)**: Threat model, non-custodial boundaries, and automated audit scanner findings.
 - 🚀 **[Release & Deployment Checklist](docs/release-checklist.md)**: Automated quality gates, deployment steps, and recovery procedures.
 - 🛡️ **[Privacy Architecture & State Boundaries](docs/privacy.md)**: Deep dive into Midnight ZK dual-state proofs vs. application-layer privacy.
 - 🤖 **[Model Context Protocol (MCP) Specification](docs/mcp.md)**: Autonomous agent integration guide for Claude, Cursor, and custom agent runtimes.
@@ -372,25 +375,26 @@ The application strictly segregates **Real On-Chain Preprod Metrics** from **Loc
 
 ## 15. Current Implemented Functionality vs Limitations
 
-### Implemented Functionality (Level 5 Complete)
+### Implemented Functionality (Level 6 Complete)
 * [x] Official Midnight Compact contract (`task_escrow.compact`) with 6 compiled zero-knowledge circuits.
+* [x] Audit Readiness Package (`docs/audit-package.md`) verifying 10 formal security and balance invariants.
+* [x] Autonomous Headless Agent Runtime (`AutonomousAgentRuntime`) and non-custodial `CapabilityBroker`.
+* [x] 13-state deterministic execution machine with exponential backoff failure handling and deadline aborts.
+* [x] Typed Midnight Proof Server Adapter (`MidnightProofServerAdapter`) with active latency probes and zero-leakage error handling.
+* [x] Decentralized 2-of-3 Threshold Arbitration Engine with 6 arbitrator lifecycle states and slashing penalties for double-voting.
+* [x] Multi-Agent Swarm Coordinator (`PactraSwarmCoordinator`) enabling hierarchical budget and capability delegation trees.
+* [x] Strict Multi-Network Separation (`LOCAL`, `PREPROD`, `MAINNET`) with `NetworkGuards` preventing cross-network contamination.
+* [x] Production Health Monitor (`ProductionHealthMonitor`) and UI Diagnostic Panel (`SystemHealthPanel`).
+* [x] Model Context Protocol (MCP) extended tools (`pactra_request_dispute`, `discover_services`, `request_quote`, `request_procurement`, `submit_evidence`, `get_task_status`).
 * [x] Generalized Multi-Service Marketplace (`COMPUTE`, `STORAGE`, `API_CALL`, `DEPLOYMENT`, `DATA_PROCESSING`).
-* [x] Cryptographic policy bindings: capability bitmasks, provider allowlist roots, condition roots.
-* [x] Non-custodial agent authority manager with capability-based procurement tokens.
-* [x] Model Context Protocol (MCP) adapter exposing bounded procurement tools.
-* [x] Multi-party threshold arbitration board (M-of-N consensus, timeout refunds).
-* [x] Privacy commitment inspector and dual-state simulation testbed.
-* [x] Preprod safety warning banner and dedicated test wallet guidance.
-* [x] Privacy-preserving client-side telemetry service with automated secret scrubbing.
-* [x] In-app structured tester feedback modal and GitHub Issue exporter.
-* [x] Developer feedback dashboard and truthful metrics view.
-* [x] Hardened error handling with actionable recovery guidance for all failure modes.
-* [x] 111 passing tests across 9 unit and integration test suites.
-* [x] Automated CI/CD with static security and secret scanning.
+* [x] 164 passing automated tests across 17 unit, integration, and chaos test suites.
+* [x] Reproducible Mainnet Deployment Manual and rollback procedures (`docs/mainnet-deployment.md`).
+* [x] Automated static security auditor detecting secret leakage and key patterns.
 
-### Current Limitations & Acquisition Status
-* **External Tester Acquisition**: Level 5 establishes all testing, feedback, safety, and release infrastructure. In accordance with strict hackathon integrity rules, zero external testers, transactions, or reviews are fabricated. Real tester acquisition (target 50+ users) is ongoing through community distribution of `docs/tester-guide.md`.
-* **Headless Proof Generation**: In-browser ZK proof generation via Lace extension operates synchronously; off-chain proof server daemons are planned for autonomous background workers.
+### Truthful Status & Production Invariants
+* **Preprod Network**: Fully deployed, verified, and operational at address `02005470876fe6a506161494553205a28bf2c37db4517af850ec63d76e4695029a`.
+* **Mainnet Readiness**: Deployment scripts, network guards, and security gates are 100% written and verified. **Mainnet is NOT yet deployed** and will not be claimed until the official Midnight Mainnet genesis occurs and formal third-party audit certification is granted.
+* **External Testers**: Truthfully reported as 0 external testers. No simulated testers or fabricated activity.
 
 ---
 
@@ -400,12 +404,8 @@ The application strictly segregates **Real On-Chain Preprod Metrics** from **Loc
 * **Level 2 (Completed):** Agent capability model, TaskPolicy, budget gauges, single-job micro-procurement, and privacy boundary inspector.
 * **Level 3 (Completed):** Generalized multi-service marketplace, cryptographic bitmasks, multi-party threshold arbitration, production transaction stepper.
 * **Level 4 (Completed):** Public Preprod MVP, 9-step COMPUTE demo walkthrough, MCP adapter, dual-state privacy simulator, 90 passing tests.
-* **Level 5 (Completed — Current):** External testing program, 10-step tester protocol, privacy-preserving telemetry, in-app feedback system, developer review dashboard, safety banner, hardened recovery flows, 111 passing tests, v0.5.0-preprod release.
-* **Level 6 (Future Phase — Eclipse):**
-  * Scaling to multi-agent decentralized swarm coordination.
-  * Cross-chain economic settlement bridges.
-  * Formal verification of Compact zero-knowledge circuits.
-  * Autonomous decentralized arbitrator staking network.
+* **Level 5 (Completed):** External testing program, 10-step tester protocol, privacy-preserving telemetry, in-app feedback system, developer review dashboard, safety banner, hardened recovery flows, 111 passing tests, v0.5.0-preprod release.
+* **Level 6 (Completed — Current: Eclipse):** Mainnet hardening, headless autonomous agent runtime, capability broker, decentralized 2-of-3 arbitration with staking & slashing, typed proof server adapter, multi-agent swarm coordinator, strict network isolation, health monitoring, chaos failure tests, 164 passing tests across 17 suites, v0.6.0-eclipse release.
 
 ---
 
