@@ -15,7 +15,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20.x
+      - name: Setup Compact Compiler
+        uses: midnightntwrk/setup-compact-action@836895c8fffbbea6bd986af2b17e8941ff29d1f8
+        continue-on-error: true
+        with:
+          compact-version: '0.31.1'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
@@ -27,11 +35,11 @@ jobs:
       - name: Security & Secret Scan
         run: npm run check:security
 
-      - name: TypeScript Static Typecheck
-        run: npm run typecheck
-
       - name: Compact Contract Compilation
         run: npm run compile:contract
+
+      - name: TypeScript Static Typecheck
+        run: npm run typecheck
 
       - name: Run All Tests (Contracts + UI Services)
         run: npm run test

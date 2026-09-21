@@ -12,7 +12,6 @@ out/
 *.log
 logs/
 .compact/
-managed/
 
 # Environment files
 .env
