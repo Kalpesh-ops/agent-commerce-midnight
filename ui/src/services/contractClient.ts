@@ -167,7 +167,10 @@ export class MidnightContractClient {
    */
   public async getProviders(networkId: MidnightNetworkId = "preprod") {
     setNetworkId(networkId as NetworkId);
-    const connectedAPI = walletService.getConnectedAPI();
+    let connectedAPI = walletService.getConnectedAPI();
+    if (!connectedAPI) {
+      connectedAPI = await walletService.ensureConnected(networkId);
+    }
     if (!connectedAPI) {
       throw new Error("Lace wallet is not connected. Connect your wallet first.");
     }

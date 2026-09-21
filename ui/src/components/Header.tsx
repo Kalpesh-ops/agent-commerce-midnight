@@ -188,16 +188,37 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Deterministic Wallet Connection Controls */}
         {wallet.isConnected ? (
-          <button
-            className="btn-secondary"
-            title={`Shielded Coin PK: ${wallet.coinPublicKey || "N/A"}\nClick to disconnect`}
-            onClick={onDisconnect}
-          >
-            <span style={{ color: "#00e699" }}>●</span>
-            {wallet.coinPublicKey
-              ? `${wallet.coinPublicKey.slice(0, 8)}...${wallet.coinPublicKey.slice(-6)}`
-              : "Lace Connected"}
-          </button>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <button
+              id="wallet-connected-btn"
+              className="btn-secondary"
+              title={`Shielded Coin PK: ${wallet.coinPublicKey || "N/A"}\nDevice: ${wallet.deviceProfile?.os || "PC"} ${wallet.deviceProfile?.deviceType || "Desktop"} (${wallet.deviceProfile?.browser || "Browser"})\nStatus: Whitelisted Session Active (Persists across reloads)\nClick to disconnect`}
+              onClick={onDisconnect}
+              style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
+            >
+              <span style={{ color: "#00e699" }}>●</span>
+              {wallet.coinPublicKey
+                ? `${wallet.coinPublicKey.slice(0, 8)}...${wallet.coinPublicKey.slice(-6)}`
+                : "Lace Connected"}
+              <span
+                style={{
+                  fontSize: "10px",
+                  background: "rgba(0, 230, 153, 0.15)",
+                  color: "#00e699",
+                  border: "1px solid rgba(0, 230, 153, 0.3)",
+                  padding: "1px 6px",
+                  borderRadius: "10px",
+                  fontWeight: 600,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "3px",
+                }}
+                title="Whitelisted device: session persists across reloads"
+              >
+                🔒 {wallet.isRestoredSession ? "Auto-Restored" : "Trusted Device"}
+              </span>
+            </button>
+          </div>
         ) : isConnecting ? (
           <button
             id="connect-wallet-btn"

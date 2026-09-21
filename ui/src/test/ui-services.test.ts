@@ -32,6 +32,24 @@ describe("Pactra UI Services & State Flow", () => {
       expect(state.coinPublicKey).toBeFalsy();
       expect(state.encryptionPublicKey).toBeFalsy();
     });
+
+    it("generates and exposes deterministic device profile with platform metadata", () => {
+      const profile = walletService.getDeviceProfile();
+      expect(profile).toBeDefined();
+      expect(profile.deviceId).toMatch(/^dev_/);
+      expect(profile.deviceType).toBeDefined();
+      expect(profile.os).toBeDefined();
+      expect(profile.browser).toBeDefined();
+    });
+
+    it("manages device whitelisting and revocation correctly", () => {
+      const profile = walletService.getDeviceProfile();
+      walletService.whitelistDevice(profile.deviceId);
+      expect(walletService.isDeviceWhitelisted(profile.deviceId)).toBe(true);
+
+      walletService.revokeDeviceWhitelist(profile.deviceId);
+      expect(walletService.isDeviceWhitelisted(profile.deviceId)).toBe(false);
+    });
   });
 
   describe("Pactra UI Protocol Service", () => {
