@@ -11,8 +11,9 @@ We appreciate community members, hackathon judges, and fellow Midnight developer
 ## 1. How to Submit Feedback
 
 You can submit feedback via:
-1. **GitHub Issue:** [Create a New Issue](https://github.com/Kalpesh-ops/agent-commerce-midnight/issues/new) using the format below.
-2. **Pull Request:** Add your entry directly to the Tester Log table in Section 3 of this document.
+1. **In-App Feedback Modal:** Click the **"💬 Feedback"** button in the top navigation header to submit structured ratings and notes directly.
+2. **GitHub Issue:** [Create a New Issue](https://github.com/Kalpesh-ops/agent-commerce-midnight/issues/new) using the template below.
+3. **Tester Iteration Log:** View real responses and tracked improvements in [`docs/feedback-log.md`](./feedback-log.md).
 
 ---
 
