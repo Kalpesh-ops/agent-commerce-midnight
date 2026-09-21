@@ -394,8 +394,28 @@ export const App: React.FC = () => {
           A privacy-preserving economic operating system for autonomous AI agents on Midnight.
           AI agents privately plan, procure, and settle resources under cryptographically anchored policies without unrestricted treasury custody.
         </p>
-        <div className="security-badge">
-          <span>🔒</span> Core Security Invariant: The agent NEVER receives unrestricted access to the user treasury.
+        <div style={{ display: "flex", gap: "12px", alignItems: "center", marginTop: "12px", flexWrap: "wrap" }}>
+          <div className="security-badge" style={{ margin: 0 }}>
+            <span>🔒</span> Core Security Invariant: The agent NEVER receives unrestricted access to the user treasury.
+          </div>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "4px 10px",
+              background: isIndexerLive ? "rgba(0, 230, 153, 0.1)" : "rgba(255, 170, 0, 0.1)",
+              border: `1px solid ${isIndexerLive ? "rgba(0, 230, 153, 0.3)" : "rgba(255, 170, 0, 0.3)"}`,
+              borderRadius: "var(--radius-full)",
+              fontSize: "11px",
+              fontWeight: 700,
+              color: isIndexerLive ? "var(--emerald)" : "var(--amber)",
+            }}
+            title={isIndexerLive ? "Midnight Preprod Indexer is reachable and reporting epochs" : "Indexer connectivity pending or slow"}
+          >
+            <span style={{ fontSize: "10px" }}>{isIndexerLive ? "●" : "○"}</span>
+            <span>Preprod Indexer: {isIndexerLive ? "Online (Epoch Active)" : "Querying Indexer..."}</span>
+          </div>
         </div>
       </section>
 
