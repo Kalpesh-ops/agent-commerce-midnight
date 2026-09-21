@@ -128,3 +128,98 @@ export function computePolicyCommitment(policy: TaskPolicy): string {
 
   return "0x" + sha256Hex(payload);
 }
+
+/**
+ * Capability bitmask mapping for compact on-chain representation.
+ */
+export const CAPABILITY_BITS: Record<AgentCapability, number> = {
+  COMPUTE: 1 << 0, // 1
+  STORAGE: 1 << 1, // 2
+  API_CALL: 1 << 2, // 4
+  DEPLOYMENT: 1 << 3, // 8
+  DATA_PROCESSING: 1 << 4, // 16
+};
+
+export function computeCapabilityBitmask(capabilities: readonly AgentCapability[]): number {
+  return capabilities.reduce((mask, cap) => mask | (CAPABILITY_BITS[cap] ?? 0), 0);
+}
+
+export function isCapabilityAuthorized(bitmask: number, capability: AgentCapability): boolean {
+  const bit = CAPABILITY_BITS[capability];
+  if (!bit) return false;
+  return (bitmask & bit) === bit;
+}
+
+/**
+ * On-chain Policy Binding represents the immutable constraints anchored to the Midnight ledger.
+ */
+export interface OnChainPolicyBinding {
+  readonly policyCommitment: string;
+  readonly taskId: string;
+  readonly capabilityBitmask: number;
+  readonly providerAllowlistRoot: string;
+  readonly maxBudget: bigint;
+  readonly maxSpendPerTransaction: bigint;
+  readonly expirationTimestamp: number;
+  readonly conditionRoot: string;
+}
+
+/**
+ * Creates an OnChainPolicyBinding from a TaskPolicy.
+ */
+export function createOnChainPolicyBinding(policy: TaskPolicy): OnChainPolicyBinding {
+  const policyCommitment = computePolicyCommitment(policy);
+  const capabilityBitmask = computeCapabilityBitmask(policy.allowedCapabilities);
+
+  // Compute a Merkle/composite root for the approved providers
+  const sortedProviders = [...policy.approvedProviders].sort();
+  const providerAllowlistRoot = "0x" + sha256Hex(JSON.stringify(sortedProviders));
+
+  return {
+    policyCommitment,
+    taskId: policy.taskId,
+    capabilityBitmask,
+    providerAllowlistRoot,
+    maxBudget: policy.maxTotalBudget,
+    maxSpendPerTransaction: policy.maxSpendPerTransaction,
+    expirationTimestamp: policy.expirationTimestamp,
+    conditionRoot: policy.completionConditionCommitment,
+  };
+}
+
+/**
+ * Validates that a candidate policy matches an on-chain committed binding.
+ */
+export function validatePolicyAgainstOnChainBinding(
+  candidatePolicy: TaskPolicy,
+  binding: OnChainPolicyBinding
+): { valid: boolean; reason?: string } {
+  const computedCommitment = computePolicyCommitment(candidatePolicy);
+  if (computedCommitment.toLowerCase() !== binding.policyCommitment.toLowerCase()) {
+    return {
+      valid: false,
+      reason: `Policy commitment mismatch: got "${computedCommitment}", expected "${binding.policyCommitment}".`,
+    };
+  }
+
+  if (candidatePolicy.taskId !== binding.taskId) {
+    return { valid: false, reason: `Task ID mismatch: "${candidatePolicy.taskId}" vs "${binding.taskId}".` };
+  }
+
+  if (candidatePolicy.maxTotalBudget > binding.maxBudget) {
+    return { valid: false, reason: `Policy budget (${candidatePolicy.maxTotalBudget}) exceeds on-chain binding (${binding.maxBudget}).` };
+  }
+
+  if (candidatePolicy.maxSpendPerTransaction > binding.maxSpendPerTransaction) {
+    return {
+      valid: false,
+      reason: `Policy per-tx limit (${candidatePolicy.maxSpendPerTransaction}) exceeds on-chain binding (${binding.maxSpendPerTransaction}).`,
+    };
+  }
+
+  if (Date.now() > binding.expirationTimestamp) {
+    return { valid: false, reason: `On-chain policy binding has expired.` };
+  }
+
+  return { valid: true };
+}
