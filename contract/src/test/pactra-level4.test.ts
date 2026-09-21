@@ -8,6 +8,8 @@ import {
   TaskPolicyEnvelope,
   CompletionVerifier,
   PolicyViolationError,
+  PactraMcpAdapter,
+  PACTRA_MCP_TOOLS,
 } from "../pactra/index.js";
 
 describe("Pactra Level 4 — PactraAgentClient API & Non-Custodial Boundaries", () => {
@@ -54,7 +56,6 @@ describe("Pactra Level 4 — PactraAgentClient API & Non-Custodial Boundaries", 
         userTreasuryTotal: 200n,
         taskEscrowAllocation: 15n,
         currentSpent: 0n,
-        reservedBudget: 0n,
         remainingBudget: 15n,
         perTransactionLimit: 3n,
       },
@@ -140,8 +141,14 @@ describe("Pactra Level 4 — PactraAgentClient API & Non-Custodial Boundaries", 
 
   it("rejects procurement when the task policy has expired", async () => {
     const shortLivedPolicy = createTaskPolicy({
-      ...envelope.policy,
+      taskId: envelope.policy.taskId,
+      maxTotalBudget: envelope.policy.maxTotalBudget,
+      maxSpendPerTransaction: envelope.policy.maxSpendPerTransaction,
+      approvedCategories: [...envelope.policy.approvedCategories],
+      approvedProviders: [...envelope.policy.approvedProviders],
+      allowedCapabilities: [...envelope.policy.allowedCapabilities],
       expirationTimestamp: Date.now() + 20,
+      completionConditionCommitment: envelope.policy.completionConditionCommitment,
     });
     const expiredEnvelope = { ...envelope, policy: shortLivedPolicy };
     const clientForExpiration = new PactraAgentClient(expiredEnvelope, registry);
@@ -152,5 +159,156 @@ describe("Pactra Level 4 — PactraAgentClient API & Non-Custodial Boundaries", 
     await expect(clientForExpiration.requestProcurement("srv_compute_alpha")).rejects.toThrow(
       PolicyViolationError
     );
+  });
+});
+
+describe("Pactra Level 4 — Model Context Protocol (MCP) Adapter & Tools", () => {
+  let registry: ServiceRegistry;
+  let envelope: TaskPolicyEnvelope;
+  let client: PactraAgentClient;
+  let mcp: PactraMcpAdapter;
+
+  beforeEach(() => {
+    registry = createDefaultServiceRegistry();
+    const verifier = new CompletionVerifier();
+    const conditionCommitment = verifier.computeConditionCommitment({
+      expectedJobId: "job_mcp_001",
+      expectedProviderCommitment: "0xprovider_alpha_enclave_99a4c102",
+      maxAllowedCost: 3n,
+      isSubjectiveTask: false,
+      externalVerifierRequired: false,
+      verifierDescription: "MCP Test Verifier",
+    });
+
+    const policy = createTaskPolicy({
+      taskId: "task_mcp_001",
+      maxTotalBudget: 10n,
+      maxSpendPerTransaction: 3n,
+      approvedCategories: ["COMPUTE", "STORAGE"],
+      approvedProviders: [
+        "0xprovider_alpha_enclave_99a4c102",
+        "0xprovider_gamma_store_44f1b883",
+      ],
+      allowedCapabilities: ["COMPUTE", "STORAGE"],
+      expirationTimestamp: Date.now() + 24 * 60 * 60 * 1000,
+      completionConditionCommitment: conditionCommitment,
+    });
+
+    envelope = {
+      taskId: policy.taskId,
+      objective: "Train neural ranker via sandboxed compute",
+      policy,
+      allowedCapabilities: policy.allowedCapabilities,
+      allowedProviders: policy.approvedProviders,
+      budget: {
+        userTreasuryTotal: 100n,
+        taskEscrowAllocation: 10n,
+        currentSpent: 0n,
+        remainingBudget: 10n,
+        perTransactionLimit: 3n,
+      },
+      completionConditions: {
+        expectedJobId: "job_mcp_001",
+        expectedProviderCommitment: "0xprovider_alpha_enclave_99a4c102",
+        maxAllowedCost: 3n,
+        isSubjectiveTask: false,
+        externalVerifierRequired: false,
+        verifierDescription: "MCP Test Verifier",
+      },
+    };
+
+    client = new PactraAgentClient(envelope, registry);
+    mcp = new PactraMcpAdapter(client);
+  });
+
+  it("exposes all official MCP tool definitions matching JSON Schema standards", () => {
+    const tools = mcp.listTools();
+    expect(tools.length).toBe(5);
+    const names = tools.map((t) => t.name);
+    expect(names).toContain("pactra_discover_services");
+    expect(names).toContain("pactra_get_quote");
+    expect(names).toContain("pactra_request_procurement");
+    expect(names).toContain("pactra_submit_evidence");
+    expect(names).toContain("pactra_get_task_status");
+
+    for (const tool of tools) {
+      expect(tool.description.length).toBeGreaterThan(15);
+      expect(tool.inputSchema.type).toBe("object");
+    }
+  });
+
+  it("dispatches pactra_discover_services with optional category filtering", async () => {
+    const res = await mcp.callTool("pactra_discover_services", { category: "COMPUTE" });
+    expect(res.isError).toBe(false);
+    expect(res.content[0].type).toBe("text");
+    const parsed = JSON.parse(res.content[0].text);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.every((s: any) => s.category === "COMPUTE")).toBe(true);
+  });
+
+  it("dispatches pactra_get_quote and checks TaskPolicy compliance", async () => {
+    const res = await mcp.callTool("pactra_get_quote", { serviceId: "srv_compute_alpha" });
+    expect(res.isError).toBe(false);
+    const quote = JSON.parse(res.content[0].text);
+    expect(quote.serviceId).toBe("srv_compute_alpha");
+    expect(quote.authorized).toBe(true);
+    expect(quote.unitPrice).toBe("2");
+  });
+
+  it("handles missing arguments in MCP tool calls gracefully with isError flag", async () => {
+    const res = await mcp.callTool("pactra_get_quote", {});
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Missing required argument: serviceId");
+  });
+
+  it("dispatches pactra_request_procurement and returns valid JSON record", async () => {
+    const res = await mcp.callTool("pactra_request_procurement", {
+      serviceId: "srv_compute_alpha",
+      payloadHash: "0xmodel_weights_sha256",
+    });
+    expect(res.isError).toBe(false);
+    const record = JSON.parse(res.content[0].text);
+    expect(record.status).toBe("SERVICE_ACCEPTED");
+    expect(record.authToken.authorizedAmount).toBe("2");
+  });
+
+  it("dispatches pactra_submit_evidence and updates execution state", async () => {
+    const procRes = await mcp.callTool("pactra_request_procurement", {
+      serviceId: "srv_compute_alpha",
+    });
+    const record = JSON.parse(procRes.content[0].text);
+
+    const evRes = await mcp.callTool("pactra_submit_evidence", {
+      procurementId: record.procurementId,
+    });
+    expect(evRes.isError).toBe(false);
+    const evidence = JSON.parse(evRes.content[0].text);
+    expect(evidence.jobId).toBe(record.jobSpec.jobId);
+    expect(evidence.outputHash).toMatch(/^0x[a-f0-9]{64}$/);
+  });
+
+  it("dispatches pactra_get_task_status reflecting remaining budget", async () => {
+    const res = await mcp.callTool("pactra_get_task_status");
+    expect(res.isError).toBe(false);
+    const status = JSON.parse(res.content[0].text);
+    expect(status.taskId).toBe("task_mcp_001");
+    expect(status.totalEscrowAllocation).toBe("10");
+    expect(status.isExpired).toBe(false);
+  });
+
+  it("returns clean error response when invoking an unknown tool", async () => {
+    const res = await mcp.callTool("pactra_unknown_tool", {});
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Unknown Pactra MCP tool");
+  });
+
+  it("enforces policy boundary when MCP model attempts unauthorized capability", async () => {
+    // DEPLOYMENT capability is NOT in envelope's allowedCapabilities
+    const res = await mcp.callTool("pactra_request_procurement", {
+      serviceId: "srv_deploy_delta",
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("Policy Violation");
   });
 });
