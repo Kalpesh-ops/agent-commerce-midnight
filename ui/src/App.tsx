@@ -9,14 +9,21 @@ import { ArbitrationPanel } from "./components/ArbitrationPanel";
 import { PrivacyModelInspector } from "./components/PrivacyModelInspector";
 import { OnboardingModal } from "./components/OnboardingModal";
 import { ComputeGuidedDemo } from "./components/ComputeGuidedDemo";
+import { SafetyBanner } from "./components/SafetyBanner";
+import { FeedbackModal } from "./components/FeedbackModal";
+import { ProductMetricsView } from "./components/ProductMetricsView";
+import { FeedbackDashboard } from "./components/FeedbackDashboard";
 import { walletService, WalletState } from "./services/wallet";
 import { escrowService, EscrowContractData } from "./services/escrowService";
 import { contractClient, TxLifecycleEvent } from "./services/contractClient";
 import { MidnightNetworkId } from "./types/midnight";
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<"protocol" | "compute" | "marketplace" | "arbitration" | "privacy">("protocol");
+  const [activeTab, setActiveTab] = useState<
+    "protocol" | "compute" | "marketplace" | "arbitration" | "privacy" | "metrics" | "feedback_dev"
+  >("protocol");
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState<boolean>(false);
   const [wallet, setWallet] = useState<WalletState>(walletService.getState());
   const [escrowState, setEscrowState] = useState<EscrowContractData>(escrowService.getState());
   const [txLifecycle, setTxLifecycle] = useState<TxLifecycleEvent | null>(null);
@@ -317,6 +324,7 @@ export const App: React.FC = () => {
         onDisconnect={handleDisconnectWallet}
         onNetworkChange={handleNetworkChange}
         onOpenGuide={() => setIsOnboardingOpen(true)}
+        onOpenFeedback={() => setIsFeedbackOpen(true)}
         onModeToggle={(mode) => {
           escrowService.setMode(mode);
           setEscrowState(escrowService.getState());
@@ -325,6 +333,14 @@ export const App: React.FC = () => {
         onContractAddressChange={(addr) => {
           handleJoinContract(addr);
         }}
+      />
+
+      <SafetyBanner />
+
+      <FeedbackModal
+        isOpen={isFeedbackOpen}
+        onClose={() => setIsFeedbackOpen(false)}
+        onLog={addLog}
       />
 
       <OnboardingModal
@@ -465,6 +481,20 @@ export const App: React.FC = () => {
         >
           🛡️ Privacy & State Boundaries
         </button>
+        <button
+          className={`tab-btn ${activeTab === "metrics" ? "active" : ""}`}
+          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
+          onClick={() => setActiveTab("metrics")}
+        >
+          📊 Truthful Metrics
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "feedback_dev" ? "active" : ""}`}
+          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
+          onClick={() => setActiveTab("feedback_dev")}
+        >
+          🛠️ Tester Feedback Log
+        </button>
       </div>
 
       {activeTab === "protocol" && (
@@ -525,6 +555,17 @@ export const App: React.FC = () => {
 
       {activeTab === "privacy" && (
         <PrivacyModelInspector />
+      )}
+
+      {activeTab === "metrics" && (
+        <ProductMetricsView
+          escrowState={escrowState}
+          isIndexerLive={isIndexerLive}
+        />
+      )}
+
+      {activeTab === "feedback_dev" && (
+        <FeedbackDashboard onLog={addLog} />
       )}
 
       <div className="tx-log">
