@@ -186,6 +186,13 @@ export const App: React.FC = () => {
 
   const handleDeployContract = async () => {
     try {
+      if (!wallet.isConnected) {
+        addLog("Connecting Midnight Lace wallet prior to on-chain deployment...", "info");
+        const connRes = await walletService.connect(wallet.networkId);
+        if (connRes.status !== "CONNECTED") {
+          throw new Error("Lace wallet connection is required to deploy on-chain. Please connect Lace wallet.");
+        }
+      }
       addLog("Preparing TaskEscrow deployment on Midnight Preprod via Lace wallet...", "info");
       addLog("Manual Action Required: Open your Midnight Lace extension window and approve the deployment transaction fee.", "info");
       const deployedAddress = await escrowService.deployOnPreprod((event) => {
@@ -199,6 +206,7 @@ export const App: React.FC = () => {
       );
     } catch (err: any) {
       addLog(`Deployment failed: ${err.message}`, "error");
+      throw err;
     }
   };
 
@@ -257,6 +265,7 @@ export const App: React.FC = () => {
       addLog(`Task created! Task ID: ${newState.taskId}`, "success");
     } catch (err: any) {
       addLog(`createTask error: ${err.message}`, "error");
+      throw err;
     }
   };
 
@@ -268,6 +277,7 @@ export const App: React.FC = () => {
       addLog(`Task funded! New escrow balance: ${newState.escrowedAmount} DUST.`, "success");
     } catch (err: any) {
       addLog(`fundTask error: ${err.message}`, "error");
+      throw err;
     }
   };
 
@@ -279,6 +289,7 @@ export const App: React.FC = () => {
       addLog("Task accepted! State changed to ACTIVE.", "success");
     } catch (err: any) {
       addLog(`acceptTask error: ${err.message}`, "error");
+      throw err;
     }
   };
 
@@ -290,6 +301,7 @@ export const App: React.FC = () => {
       addLog("Evidence submitted! State changed to COMPLETION_PENDING.", "success");
     } catch (err: any) {
       addLog(`submitCompletion error: ${err.message}`, "error");
+      throw err;
     }
   };
 
@@ -301,6 +313,7 @@ export const App: React.FC = () => {
       addLog("Task settled! Payout released to agent. State changed to COMPLETED.", "success");
     } catch (err: any) {
       addLog(`settleTask error: ${err.message}`, "error");
+      throw err;
     }
   };
 
@@ -312,6 +325,7 @@ export const App: React.FC = () => {
       addLog("Task refunded! Escrowed funds returned to creator.", "success");
     } catch (err: any) {
       addLog(`refundTask error: ${err.message}`, "error");
+      throw err;
     }
   };
 

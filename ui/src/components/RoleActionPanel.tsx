@@ -264,39 +264,74 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
         </div>
       )}
 
-      {/* Contract Deployment & Joining controls if not deployed */}
-      {isLiveMode && !data.contractAddress && (
-        <div style={{ background: "rgba(0, 0, 0, 0.25)", padding: "16px", borderRadius: "var(--radius-md)", marginBottom: "20px" }}>
-          <h4 style={{ fontSize: "14px", marginBottom: "8px" }}>On-Chain Preprod Contract Setup</h4>
-          <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "14px" }}>
-            No contract is active yet. Deploy a new TaskEscrow contract to Midnight Preprod (requires Lace signature & testnet tNight), or join an existing contract address.
+      {/* Contract Deployment & Joining controls */}
+      {!data.contractAddress ? (
+        <div style={{ background: "rgba(112, 69, 255, 0.12)", border: "1px solid var(--border-glow)", padding: "16px", borderRadius: "var(--radius-md)", marginBottom: "20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <h4 style={{ fontSize: "14px", margin: 0, color: "var(--cyan)", display: "flex", alignItems: "center", gap: "6px" }}>
+              <span>🚀</span> On-Chain Midnight Preprod Deployment Required
+            </h4>
+            <span style={{ fontSize: "11px", color: "var(--amber)", fontWeight: 700 }}>
+              NOT YET DEPLOYED
+            </span>
+          </div>
+          <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "14px", lineHeight: "1.5" }}>
+            To execute genuine zero-knowledge transactions on-chain, deploy the TaskEscrow smart contract to Midnight Preprod with your Lace wallet, or connect to an existing contract address.
           </p>
 
           <button
             id="btn-deploy-preprod"
             className="btn-action primary"
-            style={{ width: "100%", marginBottom: "12px" }}
+            style={{ width: "100%", marginBottom: "12px", padding: "12px", fontSize: "14px", fontWeight: 700 }}
             disabled={isBusy}
-            onClick={() => handleAction(onDeployContract)}
+            onClick={() => handleAction(onDeployContract, "deployContract")}
           >
-            {isBusy ? "Awaiting Lace Deployment..." : "🚀 Deploy TaskEscrow to Midnight Preprod"}
+            {isBusy ? "Balancing & Deploying on Preprod..." : "🚀 Deploy TaskEscrow Contract to Preprod"}
           </button>
 
           <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
             <input
               type="text"
-              placeholder="Paste existing contract address (0x...)"
+              placeholder="Or paste existing deployed contract address (0200...)"
               className="form-input"
               value={joinAddressInput}
               onChange={(e) => setJoinAddressInput(e.target.value)}
-              style={{ flex: 1 }}
+              style={{ flex: 1, fontSize: "12px" }}
             />
             <button
               className="btn-secondary"
               disabled={isBusy || !joinAddressInput}
-              onClick={() => handleAction(() => onJoinContract(joinAddressInput))}
+              onClick={() => handleAction(() => onJoinContract(joinAddressInput), "joinContract")}
             >
-              Join
+              Attach
+            </button>
+          </div>
+          <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "8px" }}>
+            Need testnet funds? Get free tNight / Dust from the <a href="https://midnight-tmnight-preprod.nethermind.dev/" target="_blank" rel="noreferrer" style={{ color: "var(--cyan)", textDecoration: "underline" }}>Nethermind Faucet</a>.
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: "rgba(0, 230, 153, 0.08)", border: "1px solid rgba(0, 230, 153, 0.25)", padding: "12px 16px", borderRadius: "var(--radius-md)", marginBottom: "18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ color: "var(--emerald)", fontSize: "14px" }}>●</span>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--emerald)" }}>ON-CHAIN CONTRACT ATTACHED:</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-main)" }}>
+                {data.contractAddress.slice(0, 10)}...{data.contractAddress.slice(-8)}
+              </span>
+            </div>
+            <button
+              className="btn-secondary"
+              style={{ padding: "3px 8px", fontSize: "11px" }}
+              onClick={() => {
+                if (window.confirm("Disconnect active contract address? You can redeploy or attach another.")) {
+                  localStorage.removeItem("midnight_task_escrow_contract_address");
+                  window.location.reload();
+                }
+              }}
+              title="Switch or redeploy contract"
+            >
+              Change Contract
             </button>
           </div>
         </div>

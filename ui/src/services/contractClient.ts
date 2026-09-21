@@ -138,6 +138,15 @@ export class MidnightContractClient {
   private activeContractAddress: string | null = null;
   private currentLifecycleListener: ((event: TxLifecycleEvent) => void) | null = null;
 
+  constructor() {
+    if (typeof localStorage !== "undefined") {
+      const saved = localStorage.getItem("midnight_task_escrow_contract_address");
+      if (saved) {
+        this.activeContractAddress = saved;
+      }
+    }
+  }
+
   public setLifecycleListener(listener: (event: TxLifecycleEvent) => void) {
     this.currentLifecycleListener = listener;
   }
@@ -149,6 +158,12 @@ export class MidnightContractClient {
   }
 
   public getActiveContractAddress(): string | null {
+    if (!this.activeContractAddress && typeof localStorage !== "undefined") {
+      const saved = localStorage.getItem("midnight_task_escrow_contract_address");
+      if (saved) {
+        this.activeContractAddress = saved;
+      }
+    }
     return this.activeContractAddress;
   }
 
@@ -367,6 +382,20 @@ export class MidnightContractClient {
   }
 
   /**
+   * Ensure deployed contract instance is connected in memory, re-finding if needed.
+   */
+  public async ensureContractInstance(networkId: MidnightNetworkId = "preprod"): Promise<DeployedContract<any> | FoundContract<any> | any> {
+    if (this.deployedContract) {
+      return this.deployedContract;
+    }
+    const address = this.getActiveContractAddress();
+    if (!address) {
+      throw new Error("No active contract address configured. Please deploy or join a contract on Midnight Preprod first.");
+    }
+    return this.joinContract(address, networkId);
+  }
+
+  /**
    * Universal executor for real Midnight on-chain transactions with deterministic lifecycle
    */
   private async executeTx(
@@ -379,11 +408,19 @@ export class MidnightContractClient {
         status: "WALLET_REQUIRED",
         message: `Lace wallet connection required to execute ${actionName}.`,
       });
-      throw new Error(`Lace wallet is not connected.`);
+      throw new Error(`Lace wallet is not connected. Please connect Lace wallet first.`);
     }
 
     if (!this.deployedContract) {
-      throw new Error("No active contract instance connected.");
+      const activeAddr = this.getActiveContractAddress();
+      if (!activeAddr) {
+        throw new Error("No active contract instance connected. Please deploy or join a TaskEscrow contract first.");
+      }
+      this.emitLifecycle({
+        status: "READY",
+        message: `Attaching to deployed contract ${activeAddr.slice(0, 16)}...`,
+      });
+      await this.ensureContractInstance();
     }
 
     try {

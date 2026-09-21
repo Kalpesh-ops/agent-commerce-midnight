@@ -18,6 +18,7 @@
     "build:ui": "npm run build --prefix ui",
     "typecheck": "npm run typecheck --prefix contract && npm run typecheck --prefix ui",
     "check:security": "node ./scripts/check-security.js",
+    "deploy:preprod": "npx tsx scripts/deploy.ts",
     "ci": "npm run typecheck && npm run compile:contract && npm run test && npm run build:ui && npm run check:security",
     "build": "npm run build:contract && npm run build:ui"
   },
