@@ -150,7 +150,7 @@ export class ProcurementEngine {
    */
   public async executeService(
     procurementId: string,
-    simulateFailure?: "REJECTED" | "TIMEOUT" | "INVALID_EVIDENCE"
+    simulateFailure?: "REJECTED" | "TIMEOUT" | "INVALID_EVIDENCE" | "REPLAY_EVIDENCE"
   ): Promise<ExecutionEvidence> {
     const record = this.procurements.get(procurementId);
     if (!record) {
@@ -185,6 +185,8 @@ export class ProcurementEngine {
     let outputHash: string;
     if (simulateFailure === "INVALID_EVIDENCE") {
       outputHash = "0xinvalid_tampered_output_hash_corrupt_data_0000000000000000000000";
+    } else if (simulateFailure === "REPLAY_EVIDENCE") {
+      outputHash = Array.from(this.spentEvidenceHashes)[0] ?? "0xspent_replayed_evidence_hash";
     } else {
       outputHash =
         "0x" +
