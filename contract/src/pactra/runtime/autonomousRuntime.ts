@@ -100,11 +100,11 @@ export class PactraAutonomousRuntime {
           const { token } = this.broker.authorizeAction(intent);
 
           // 4. Reserve Escrow
-          this.recordTransition("PROCUREMENT_PENDING", `Procurement token "${token.procurementId}" reserved in escrow.`);
+          this.recordTransition("PROCUREMENT_PENDING", `Procurement token "${token.authorizationId}" reserved in escrow.`);
 
           // 5. Execute Action
           this.recordTransition("EXECUTING", `Executing capability "${step.capability}" with provider "${step.targetServiceId}".`);
-          const evidencePayloadHash = "0x" + sha256Hex(`result_${step.stepId}_${token.procurementId}`);
+          const evidencePayloadHash = "0x" + sha256Hex(`result_${step.stepId}_${token.authorizationId}`);
 
           // 6. Wait for Proof & Verification
           this.recordTransition("WAITING_FOR_PROOF", `Awaiting cryptographic attestation from provider.`);
@@ -121,7 +121,7 @@ export class PactraAutonomousRuntime {
           };
 
           const evidence = {
-            procurementId: token.procurementId,
+            procurementId: token.authorizationId,
             jobId: step.stepId,
             providerCommitment: step.targetServiceId,
             costIncurred: quote.unitPrice,
@@ -137,7 +137,7 @@ export class PactraAutonomousRuntime {
           }
 
           // 7. Settle Escrow
-          this.broker.confirmSettlement(token.procurementId, quote.unitPrice);
+          this.broker.confirmSettlement(token.authorizationId, quote.unitPrice);
           this.totalSpent += quote.unitPrice;
           this.completedSteps++;
           this.failureHandler.recordSuccess(step.stepId);
@@ -171,10 +171,6 @@ export class PactraAutonomousRuntime {
 
   public getSummary(plan: RuntimePlan): RuntimeExecutionSummary {
     const budgetStatus = this.broker.getBudgetStatus();
-    let totalRetries = 0;
-    for (const step of plan.steps) {
-      totalRetries += this.failureHandler.getRetryCount(step.stepId);
-    }
 
     return {
       taskId: plan.taskId,
@@ -183,7 +179,7 @@ export class PactraAutonomousRuntime {
       remainingBudget: budgetStatus.remainingBudget,
       completedSteps: this.completedSteps,
       totalSteps: plan.steps.length,
-      retryCount: totalRetries,
+      retryCount: this.failureHandler.getTotalRetriesAttempted(),
       transitions: this.transitions,
       isTerminal: this.isTerminal(),
     };

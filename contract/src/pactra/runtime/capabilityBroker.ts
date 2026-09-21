@@ -133,14 +133,14 @@ export class CapabilityBroker {
    * Finalizes spending upon verified completion evidence.
    */
   public confirmSettlement(procurementId: string, amount: bigint) {
-    this.authority.recordSpent(procurementId, amount);
+    this.authority.recordExpenditure(amount);
   }
 
   /**
    * Releases reserved authority in the event of an execution failure or refund.
    */
   public releaseReservation(procurementId: string, amount: bigint) {
-    this.authority.releaseReservation(procurementId, amount);
+    this.authority.releaseReservation(amount);
   }
 
   /**

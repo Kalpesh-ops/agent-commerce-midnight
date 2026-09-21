@@ -28,6 +28,7 @@ export interface FailureEvaluation {
 
 export class RuntimeFailureHandler {
   private retryCounts = new Map<string, number>();
+  private totalRetriesAttempted: number = 0;
 
   /**
    * Evaluates an execution failure and determines deterministic next action.
@@ -80,6 +81,7 @@ export class RuntimeFailureHandler {
     // Increment retry count
     const nextRetry = currentRetries + 1;
     this.retryCounts.set(stepId, nextRetry);
+    this.totalRetriesAttempted++;
 
     // Compute exponential backoff with jitter
     const exponentialDelay = policy.baseBackoffMs * Math.pow(2, nextRetry - 1);
@@ -101,9 +103,16 @@ export class RuntimeFailureHandler {
   }
 
   /**
-   * Retrieve current retry count for a step.
+   * Retrieve current active retry count for a step.
    */
   public getRetryCount(stepId: string): number {
     return this.retryCounts.get(stepId) ?? 0;
+  }
+
+  /**
+   * Retrieve total cumulative retries attempted across all steps.
+   */
+  public getTotalRetriesAttempted(): number {
+    return this.totalRetriesAttempted;
   }
 }
