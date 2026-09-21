@@ -7,6 +7,7 @@ import { AgentAuthorityPanel } from "./components/AgentAuthorityPanel";
 import { MarketplaceView } from "./components/MarketplaceView";
 import { ArbitrationPanel } from "./components/ArbitrationPanel";
 import { PrivacyModelInspector } from "./components/PrivacyModelInspector";
+import { OnboardingModal } from "./components/OnboardingModal";
 import { walletService, WalletState } from "./services/wallet";
 import { escrowService, EscrowContractData } from "./services/escrowService";
 import { contractClient, TxLifecycleEvent } from "./services/contractClient";
@@ -14,6 +15,7 @@ import { MidnightNetworkId } from "./types/midnight";
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"protocol" | "marketplace" | "arbitration" | "privacy">("protocol");
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
   const [wallet, setWallet] = useState<WalletState>(walletService.getState());
   const [escrowState, setEscrowState] = useState<EscrowContractData>(escrowService.getState());
   const [txLifecycle, setTxLifecycle] = useState<TxLifecycleEvent | null>(null);
@@ -313,6 +315,7 @@ export const App: React.FC = () => {
         onConnect={handleConnectWallet}
         onDisconnect={handleDisconnectWallet}
         onNetworkChange={handleNetworkChange}
+        onOpenGuide={() => setIsOnboardingOpen(true)}
         onModeToggle={(mode) => {
           escrowService.setMode(mode);
           setEscrowState(escrowService.getState());
@@ -320,6 +323,27 @@ export const App: React.FC = () => {
         }}
         onContractAddressChange={(addr) => {
           handleJoinContract(addr);
+        }}
+      />
+
+      <OnboardingModal
+        isOpen={isOnboardingOpen}
+        onClose={() => {
+          setIsOnboardingOpen(false);
+          try {
+            localStorage.setItem("pactra_onboarding_shown", "true");
+          } catch {
+            // ignore localStorage errors
+          }
+        }}
+        onStartGuide={() => {
+          setIsOnboardingOpen(false);
+          setActiveTab("protocol");
+          try {
+            localStorage.setItem("pactra_onboarding_shown", "true");
+          } catch {
+            // ignore localStorage errors
+          }
         }}
       />
 

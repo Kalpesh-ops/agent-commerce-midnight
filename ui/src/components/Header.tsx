@@ -11,6 +11,7 @@ interface HeaderProps {
   onNetworkChange: (net: MidnightNetworkId) => void;
   onModeToggle: (mode: "live" | "demo") => void;
   onContractAddressChange: (addr: string) => void;
+  onOpenGuide?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   onDisconnect,
   onNetworkChange,
   onModeToggle,
+  onOpenGuide,
 }) => {
   const isConnecting = wallet.status === "CONNECTING";
   const isDetecting = wallet.status === "DETECTING";
@@ -30,12 +32,38 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="brand-section">
         <div className="brand-logo-icon">🌌</div>
         <div>
-          <h1 className="brand-title">Pactra</h1>
-          <p className="brand-subtitle">Autonomous Agent Commerce & Escrow Protocol • Level 1</p>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <h1 className="brand-title">Pactra</h1>
+            <span
+              style={{
+                background: "rgba(255, 170, 0, 0.15)",
+                color: "var(--amber)",
+                border: "1px solid rgba(255, 170, 0, 0.3)",
+                borderRadius: "4px",
+                fontSize: "10px",
+                fontWeight: 800,
+                padding: "2px 6px",
+                letterSpacing: "0.5px",
+              }}
+            >
+              PREPROD TESTNET
+            </span>
+          </div>
+          <p className="brand-subtitle">Autonomous Agent Commerce & Escrow Protocol • Preprod MVP</p>
         </div>
       </div>
 
       <div className="header-actions">
+        {onOpenGuide && (
+          <button
+            className="btn-secondary"
+            onClick={onOpenGuide}
+            style={{ padding: "6px 12px", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}
+            title="Open Pactra user guide & architecture primer"
+          >
+            <span>📖</span> Guide
+          </button>
+        )}
         {/* Visual Badge: strictly distinguishing Live Preprod from Demo */}
         {isLiveMode ? (
           <div
