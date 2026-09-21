@@ -1,24 +1,28 @@
 # Pactra — Privacy-Preserving Economic Operating Layer for Autonomous AI Agents
 
-> **Level 4 Public Preprod MVP**: A privacy-first economic operating system built on the **Midnight Network** for autonomous AI agents. Enables bounded resource procurement, cryptographic policy enforcement, Model Context Protocol (MCP) tool integration, M-of-N threshold arbitration, and zero-knowledge escrow settlement without giving agents custody of user wallets.
+> **Level 5: Full Moon — External Users & Feedback Loop**: A privacy-first economic operating system built on the **Midnight Network** for autonomous AI agents. Enables bounded resource procurement, cryptographic policy enforcement, Model Context Protocol (MCP) tool integration, M-of-N threshold arbitration, and zero-knowledge escrow settlement without giving agents custody of user wallets.
 >
 > *"Give an agent a goal and bounded economic authority — not your wallet."*
 
 [![Pactra Protocol CI](https://github.com/Kalpesh-ops/agent-commerce-midnight/actions/workflows/ci.yaml/badge.svg)](https://github.com/Kalpesh-ops/agent-commerce-midnight/actions/workflows/ci.yaml)
 [![Midnight Network](https://img.shields.io/badge/Network-Midnight%20Preprod-7045ff.svg)](https://midnight.network)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests Passing](https://img.shields.io/badge/Tests-90%20Passing-00e699.svg)](contract/src/test)
+[![Tests Passing](https://img.shields.io/badge/Tests-111%20Passing-00e699.svg)](contract/src/test)
+[![Version](https://img.shields.io/badge/Release-v0.5.0--preprod-orange.svg)](CHANGELOG.md)
 
 ---
 
 ## Documentation Suite
 
-- 📖 **[User Guide & Tester Manual](docs/user-guide.md)**: Step-by-step instructions to connect Midnight Lace, fund via Nethermind Faucet, and run tasks on Preprod.
+- 🧪 **[External Tester Guide](docs/tester-guide.md)**: 10-step reproducible testing protocol on Midnight Preprod with troubleshooting.
+- 💬 **[Tester Feedback Channel](docs/feedback.md)**: Structured review template and bug reporting guidelines.
+- 📋 **[Feedback & Iteration Log](docs/feedback-log.md)**: Real audit findings, issue tracking, and product improvements loop.
+- 🔒 **[Level 5 Security Review](docs/security-review.md)**: Threat model, non-custodial boundaries, and automated audit scanner findings.
+- 🚀 **[Release & Deployment Checklist](docs/release-checklist.md)**: Automated quality gates, deployment steps, and recovery procedures.
 - 🛡️ **[Privacy Architecture & State Boundaries](docs/privacy.md)**: Deep dive into Midnight ZK dual-state proofs vs. application-layer privacy.
 - 🤖 **[Model Context Protocol (MCP) Specification](docs/mcp.md)**: Autonomous agent integration guide for Claude, Cursor, and custom agent runtimes.
 - 🌌 **[Midnight Challenge Submission](docs/idea-submission.md)**: Official problem statement, architectural vision, and hackathon evaluation criteria.
 - 📣 **[Public Presence & Social Profile](docs/social-profile.md)**: Official branding, X/Twitter copy, and challenge metadata.
-- 📝 **[Tester Feedback Channel](docs/feedback.md)**: Structured review template and bug reporting log.
 
 ---
 
@@ -35,9 +39,11 @@
 10. [Local Development](#10-local-development)
 11. [Midnight Preprod Testnet Deployment](#11-midnight-preprod-testnet-deployment)
 12. [Testing Suite](#12-testing-suite)
-13. [Threat Model & Attack Analysis](#13-threat-model--attack-analysis)
-14. [Current Implemented Functionality vs Limitations](#14-current-implemented-functionality-vs-limitations)
-15. [Roadmap](#15-roadmap)
+13. [Level 5 External Testing & Telemetry Architecture](#13-level-5-external-testing--telemetry-architecture)
+14. [Threat Model & Attack Analysis](#14-threat-model--attack-analysis)
+15. [Current Implemented Functionality vs Limitations](#15-current-implemented-functionality-vs-limitations)
+16. [Roadmap](#16-roadmap)
+
 
 ---
 
@@ -316,33 +322,40 @@ Pactra features a test suite of **70 passing automated tests**:
 npm run test
 ```
 
-### Breakdown of Test Suites
-* **`contract/src/test/task-escrow.test.ts` (21 tests)**:
-  * Complete lifecycle state transitions: `UNINITIALIZED` → `CREATED` → `FUNDED` → `ACTIVE` → `COMPLETION_PENDING` → `COMPLETED`.
-  * Negative invariants: invalid state transitions, zero budget rejection, unauthorized agent acceptance, overspend prevention.
-  * Refund workflows: creator reclaim after funding, active task refund, double-refund prevention.
-* **`contract/src/test/pactra-level2.test.ts` (14 tests)**:
-  * Capability policy checks and unauthorized capability rejections.
-  * Per-transaction budget ceilings and cumulative budget exhaustion.
-  * Expired task policy rejections and unapproved provider blocking.
-  * Replayed evidence detection and objective condition mismatch handling.
-  * Strict rejection of unauthorized wallet transfer attempts.
-* **`contract/src/test/pactra-level3.test.ts` (25 tests)**:
-  * All 5 capability categories: `COMPUTE`, `STORAGE`, `API_CALL`, `DEPLOYMENT`, `DATA_PROCESSING`.
-  * Multi-service action graph planning and topological dependency ordering.
-  * Provider revocation lifecycle (`ACTIVE` → `REVOKED`) and runtime blocking.
-  * Provider quote tampering and price spike rejections.
-  * Cryptographic capability bitmask validation (`CAPABILITY_BITS`).
-  * Condition commitment root anchoring and verification.
-  * Multi-party threshold arbitration: 2-of-3 quorum, split verdicts, unauthorized arbitrator rejection, and voting timeouts.
-* **`ui/src/test/ui-services.test.ts` (10 tests)**:
-  * Deterministic Lace wallet state machine transitions (`DISCONNECTED`, `CONNECTING`, `CONNECTED`, `FAILED`).
-  * End-to-end UI protocol service planning, marketplace procurement, evidence verification, and arbitration voting.
-  * Escrow service indexer synchronization and local state resets.
+### Breakdown of Test Suites (111 Tests Total)
+* **`contract/src/test/task-escrow.test.ts` (21 tests)**: Complete lifecycle state transitions, negative invariants, refund workflows, double-refund prevention.
+* **`contract/src/test/pactra-level2.test.ts` (14 tests)**: Capability policy checks, per-call budget ceilings, cumulative exhaustion, replayed evidence detection, non-custodial protection.
+* **`contract/src/test/pactra-level3.test.ts` (25 tests)**: All 5 capability categories, action graph planning, provider revocation, quote validation, M-of-N threshold arbitration.
+* **`contract/src/test/pactra-level4.test.ts` (20 tests)**: Preprod MVP integration, Blake2b commitment validation, MCP adapter tool schemas, dual-state privacy simulator.
+* **`contract/src/test/pactra-level5.test.ts` (8 tests)**: Insufficient balance handling, wallet rejection recovery, indexer delay tolerance, duplicate action guard, telemetry privacy sanitization.
+* **`ui/src/test/telemetry.test.ts` (6 tests)**: Privacy-preserving telemetry service, rejection of sensitive keys/passwords/seeds, event aggregation, payload clearing.
+* **`ui/src/test/feedback.test.ts` (6 tests)**: Structured feedback collection, 5-point rating validation, markdown report generation, GitHub issue URL formatting.
+* **`ui/src/test/ui-services.test.ts` (10 tests)**: Deterministic Lace wallet state machine transitions, indexer sync, local state management.
+* **`ui/src/test/e2e-tester-journey.test.ts` (1 test)**: Comprehensive 10-step first-time tester journey simulation from connection to settlement and feedback.
 
 ---
 
-## 13. Threat Model & Attack Analysis
+## 13. Level 5 External Testing & Telemetry Architecture
+
+Level 5 transitions Pactra from a technical Preprod MVP into an externally testable product:
+
+### 13.1 Privacy-First Product Telemetry
+Product metrics are recorded locally with strict privacy sanitization (`ui/src/services/telemetryService.ts`):
+* **Allowed Events**: High-level aggregate operational milestones (`ONBOARDING_STARTED`, `WALLET_CONNECTED`, `TASK_CREATED`, `PROCUREMENT_SUCCESS`, `ESCROW_SETTLED`).
+* **Cryptographic Sanitizer**: Disallows any payload key matching `/private|secret|seed|prompt|key/i` or values resembling 64-character private keys or hashes.
+* **Zero Cloud Tracking**: Stored exclusively in browser local memory; never phoned home to third-party ad networks or tracking scripts.
+
+### 13.2 Structured Feedback Loop
+* **In-App Feedback Modal**: Click the "💬 Feedback" button in the header to submit 1–5 ratings across Onboarding, Lace Connection, Privacy Understanding, Policy Config, and Usability.
+* **GitHub Issue Exporter**: Direct one-click formatting of feedback into a prefilled GitHub Issue template.
+* **Developer Feedback Dashboard**: Internal console for reviewing feedback distribution and prioritizing protocol updates.
+
+### 13.3 Truthful Metrics View
+The application strictly segregates **Real On-Chain Preprod Metrics** from **Local Simulation Testbed Data**, preventing misleading or fabricated usage figures.
+
+---
+
+## 14. Threat Model & Attack Analysis
 
 | Attack Vector | Attacker Objective | Pactra Defense Mechanism |
 |---|---|---|
@@ -353,43 +366,50 @@ npm run test
 | **Evidence Replay Attack** | Resubmit previous valid evidence to claim duplicate payment | `spentJobIds` and `spentEvidenceHashes` enforce single-use execution tokens. |
 | **Corrupted / Subjective Output** | Provider delivers garbage data for subjective tasks | `ArbitrationBoard` requires M-of-N threshold consensus among independent oracle nodes and human experts. |
 | **Contract Policy Tampering** | Off-chain planner attempts to modify spending limits or allowed providers | Policy commitment and capability bitmask are anchored cryptographically to the Midnight contract. |
+| **Duplicate Submissions** | Double-click transaction buttons during network latency | UI-level `isProcessing` state guards lock inputs until on-chain resolution completes. |
 
 ---
 
-## 14. Current Implemented Functionality vs Limitations
+## 15. Current Implemented Functionality vs Limitations
 
-### Implemented Functionality (Level 3 Complete)
+### Implemented Functionality (Level 5 Complete)
 * [x] Official Midnight Compact contract (`task_escrow.compact`) with 6 compiled zero-knowledge circuits.
-* [x] Generalized Multi-Service Marketplace supporting `COMPUTE`, `STORAGE`, `API_CALL`, `DEPLOYMENT`, and `DATA_PROCESSING`.
-* [x] Dynamic service registry with pricing models, SLA terms, and active/revoked lifecycle states.
+* [x] Generalized Multi-Service Marketplace (`COMPUTE`, `STORAGE`, `API_CALL`, `DEPLOYMENT`, `DATA_PROCESSING`).
 * [x] Cryptographic policy bindings: capability bitmasks, provider allowlist roots, condition roots.
 * [x] Non-custodial agent authority manager with capability-based procurement tokens.
+* [x] Model Context Protocol (MCP) adapter exposing bounded procurement tools.
 * [x] Multi-party threshold arbitration board (M-of-N consensus, timeout refunds).
-* [x] Production transaction flow with deterministic state machine and visual stepper.
-* [x] Midnight Lace wallet integration with unsealed balancing and indexer synchronization.
-* [x] 70 comprehensive unit, integration, and UI service tests.
-* [x] Automated GitHub Actions CI/CD with static security and secret scanning.
+* [x] Privacy commitment inspector and dual-state simulation testbed.
+* [x] Preprod safety warning banner and dedicated test wallet guidance.
+* [x] Privacy-preserving client-side telemetry service with automated secret scrubbing.
+* [x] In-app structured tester feedback modal and GitHub Issue exporter.
+* [x] Developer feedback dashboard and truthful metrics view.
+* [x] Hardened error handling with actionable recovery guidance for all failure modes.
+* [x] 111 passing tests across 9 unit and integration test suites.
+* [x] Automated CI/CD with static security and secret scanning.
 
-### Current Limitations & Research Areas
-* **Deterministic Planner vs Autonomous LLM:** The current planner employs deterministic task templates. Replacing this with an autonomous LLM (e.g., Claude 3.7 or GPT-4o) requires connecting the existing `procurementEngine` to an agent tool-calling framework (e.g., LangChain / MCP). The security boundary is already designed to support this swap without alteration.
-* **On-Chain Merkle Tree Verification in Compact:** While capability bitmasks are currently verified directly, full Merkle membership proofs for large provider allowlists (10,000+ providers) inside Compact circuits are planned for Level 4.
-* **Off-Chain Proof Server Hosting:** For production headless agents, deploying a dedicated Midnight Proof Server daemon is recommended over in-browser proving for faster ZK-SNARK generation.
+### Current Limitations & Acquisition Status
+* **External Tester Acquisition**: Level 5 establishes all testing, feedback, safety, and release infrastructure. In accordance with strict hackathon integrity rules, zero external testers, transactions, or reviews are fabricated. Real tester acquisition (target 50+ users) is ongoing through community distribution of `docs/tester-guide.md`.
+* **Headless Proof Generation**: In-browser ZK proof generation via Lace extension operates synchronously; off-chain proof server daemons are planned for autonomous background workers.
 
 ---
 
-## 15. Roadmap
+## 16. Roadmap
 
 * **Level 1 (Completed):** Core TaskEscrow Compact contract primitive, simulator tests, and initial Lace wallet connector.
 * **Level 2 (Completed):** Agent capability model, TaskPolicy, budget gauges, single-job micro-procurement, and privacy boundary inspector.
-* **Level 3 (Completed — Current):** Generalized multi-service marketplace, cryptographic bitmasks, multi-party threshold arbitration, production transaction stepper, CI/CD quality gates, and 70 passing tests.
-* **Level 4 (Future Research):**
-  * Model Context Protocol (MCP) server exposing Pactra procurement tools directly to Claude, Cursor, and AutoGPT.
-  * Multi-agent sub-delegation trees with recursive ZK budget allowances.
-  * Native Midnight Proof Server integration for headless autonomous daemon execution.
-  * DePIN marketplace cross-chain settlement bridges.
+* **Level 3 (Completed):** Generalized multi-service marketplace, cryptographic bitmasks, multi-party threshold arbitration, production transaction stepper.
+* **Level 4 (Completed):** Public Preprod MVP, 9-step COMPUTE demo walkthrough, MCP adapter, dual-state privacy simulator, 90 passing tests.
+* **Level 5 (Completed — Current):** External testing program, 10-step tester protocol, privacy-preserving telemetry, in-app feedback system, developer review dashboard, safety banner, hardened recovery flows, 111 passing tests, v0.5.0-preprod release.
+* **Level 6 (Future Phase — Eclipse):**
+  * Scaling to multi-agent decentralized swarm coordination.
+  * Cross-chain economic settlement bridges.
+  * Formal verification of Compact zero-knowledge circuits.
+  * Autonomous decentralized arbitrator staking network.
 
 ---
 
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.
+
