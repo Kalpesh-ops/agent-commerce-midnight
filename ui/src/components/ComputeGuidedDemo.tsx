@@ -1,19 +1,16 @@
 import React, { useState } from "react";
 import { pactraUiService } from "../services/pactraUiService";
-import {
-  ProcurementRecord,
-  ExecutionEvidence,
-  VerificationResult,
-} from "../../../contract/src/index.js";
+import { ProcurementRecord, ExecutionEvidence, VerificationResult } from "../../../contract/src/index.js";
+import { Hash, LogFn, Mark, PageHead, Tag, useSingleFlight } from "./ui";
 
 interface ComputeGuidedDemoProps {
-  onLog: (text: string, type?: "info" | "success" | "error") => void;
+  onLog: LogFn;
   onNavigateToEscrow?: () => void;
 }
 
 interface StepInfo {
-  number: number;
   title: string;
+  action: string;
   shortDesc: string;
   shielded: string[];
   observable: string[];
@@ -21,110 +18,109 @@ interface StepInfo {
 
 const STEPS: StepInfo[] = [
   {
-    number: 1,
-    title: "1. Create Task",
-    shortDesc: "Define the high-level computational objective without revealing private parameters to the network.",
-    shielded: ["Objective: Matrix Factorization / ML Inference", "Input Data Shape & Weights", "Internal Agent Strategy"],
-    observable: ["Task Identifier: task_compute_demo_01", "Task Creation Block Height"],
+    title: "Create the task",
+    action: "Create task",
+    shortDesc: "Describe the job: run a matrix factorisation on a private dataset. The description never leaves your browser.",
+    shielded: ["Objective: matrix factorisation and inference", "Input data shape and weights", "How the agent should approach it"],
+    observable: ["Task id: task_compute_demo_01", "Block height the task was created at"],
   },
   {
-    number: 2,
-    title: "2. Define Policy & Budget",
-    shortDesc: "Set strict spending limits, approved capability categories, and completion condition specs.",
-    shielded: ["Full Capability Matrix: ['COMPUTE']", "Detailed Discretionary Rules", "Per-Transaction Limit: 3 DUST"],
-    observable: ["Maximum Total Budget: 10 DUST", "Expiration Timestamp (+7 Days)"],
+    title: "Set policy and budget",
+    action: "Save policy",
+    shortDesc: "Cap total spend, cap each purchase, and allow only the COMPUTE category.",
+    shielded: ["Allowed capabilities: COMPUTE", "Detailed spending rules", "Per purchase limit: 3 DUST"],
+    observable: ["Total budget ceiling: 10 DUST", "Expiry: 7 days from now"],
   },
   {
-    number: 3,
-    title: "3. Authorize Bounded Agent",
-    shortDesc: "Generate the cryptographic Policy Commitment. The agent receives bounded authority, NOT your wallet keys.",
-    shielded: ["User Wallet Private Key / Seed (NEVER SHARED)", "Zero-Knowledge Witness Preimages"],
-    observable: ["Policy Commitment: H(Policy, Salt)", "Authority Status: BOUNDED_ACTIVE"],
+    title: "Authorise the agent",
+    action: "Authorise agent",
+    shortDesc: "Pactra hashes the policy into a commitment. The agent receives authority under that commitment and nothing else.",
+    shielded: ["Your wallet keys and seed phrase, never shared", "Witness preimages for the proofs"],
+    observable: ["Policy commitment: H(policy, salt)", "Authority status: BOUNDED_ACTIVE"],
   },
   {
-    number: 4,
-    title: "4. Discover Compute Service",
-    shortDesc: "Agent queries the generalized registry for verified secure enclave compute providers.",
-    shielded: ["Service Selection Logic", "Target Pipeline Dependencies"],
-    observable: ["Provider ID: 0xprovider_alpha_enclave_99a4c102", "Unit Price: 3 DUST", "SLA: 99.9%"],
+    title: "Find a compute provider",
+    action: "Select provider",
+    shortDesc: "The agent looks up registered enclave compute providers that the policy allows.",
+    shielded: ["Why the agent picked this provider", "What else the pipeline depends on"],
+    observable: ["Provider id: 0xprovider_alpha_enclave_99a4c102", "Unit price: 3 DUST", "SLA: 99.9%"],
   },
   {
-    number: 5,
-    title: "5. Request Procurement",
-    shortDesc: "Agent submits a structured micro-procurement request. Policy engine verifies budget and authorization.",
-    shielded: ["Input Dataset Plaintext", "Task Execution Instructions"],
-    observable: ["Capability Request: COMPUTE", "Job Identifier Hash", "Authorization Token ID"],
+    title: "Request the purchase",
+    action: "Request purchase",
+    shortDesc: "The agent asks to buy one compute job. The policy engine checks budget and category before approving.",
+    shielded: ["The dataset in plain text", "Execution instructions"],
+    observable: ["Capability requested: COMPUTE", "Job id hash", "Authorisation token id"],
   },
   {
-    number: 6,
-    title: "6. Reserve Escrow",
-    shortDesc: "Escrow reserves required funds locked against completion condition commitment.",
-    shielded: ["Escrow Account Private Spending Secret"],
-    observable: ["Escrow Locked Amount: 3 DUST", "Remaining Agent Budget: 7 DUST", "State: ESCROW_ACTIVE"],
+    title: "Reserve escrow",
+    action: "Reserve funds",
+    shortDesc: "Three DUST are locked against the completion condition. The agent still cannot move them.",
+    shielded: ["The escrow's spending secret"],
+    observable: ["Locked: 3 DUST", "Remaining budget: 7 DUST", "State: ESCROW_ACTIVE"],
   },
   {
-    number: 7,
-    title: "7. Receive Execution Evidence",
-    shortDesc: "Compute node runs confidential job in TEE and produces verifiable cryptographic attestation.",
-    shielded: ["Raw Execution Memory & Intermediate Tensors", "Provider Private Enclave Key"],
-    observable: ["Enclave Attestation Hash", "Output Commitment: H(Result)", "Execution Duration: 1.24s"],
+    title: "Receive evidence",
+    action: "Run job",
+    shortDesc: "The provider runs the job inside a secure enclave and returns a signed attestation of the output.",
+    shielded: ["Enclave memory and intermediate tensors", "The provider's enclave key"],
+    observable: ["Attestation hash", "Output commitment: H(result)", "Execution time"],
   },
   {
-    number: 8,
-    title: "8. Verify Evidence",
-    shortDesc: "Objective condition verifier checks proof of execution against initial condition commitment.",
-    shielded: ["Verifier Private Evaluation Logic"],
-    observable: ["Verification Result: VALID", "Attestation Check: PASSED", "Cost Check: 3 <= 3 DUST"],
+    title: "Verify evidence",
+    action: "Verify",
+    shortDesc: "The verifier checks the evidence against the condition committed in step 3.",
+    shielded: ["The verifier's evaluation logic"],
+    observable: ["Result: valid or rejected", "Attestation check", "Cost check: 3 of 3 DUST"],
   },
   {
-    number: 9,
-    title: "9. Settle or Refund",
-    shortDesc: "Verified evidence unlocks the escrow payout to provider (or refunds creator on invalid evidence).",
-    shielded: ["Settlement Witness Secret"],
-    observable: ["Settlement Status: SETTLED_SUCCESS", "Payout: 3 DUST to Provider", "Final Escrow State: COMPLETE"],
+    title: "Settle or refund",
+    action: "Finish",
+    shortDesc: "Valid evidence releases payment to the provider. Invalid evidence sends it back to you.",
+    shielded: ["Settlement witness secret"],
+    observable: ["Settlement status", "Payout or refund amount", "Final escrow state"],
   },
 ];
 
-export const ComputeGuidedDemo: React.FC<ComputeGuidedDemoProps> = ({
-  onLog,
-  onNavigateToEscrow,
-}) => {
+export const ComputeGuidedDemo: React.FC<ComputeGuidedDemoProps> = ({ onLog, onNavigateToEscrow }) => {
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [viewStep, setViewStep] = useState<number>(1);
   const [procurementRecord, setProcurementRecord] = useState<ProcurementRecord | null>(null);
   const [evidence, setEvidence] = useState<ExecutionEvidence | null>(null);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [settled, setSettled] = useState<boolean>(false);
   const [simulateFailure, setSimulateFailure] = useState<boolean>(false);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const { busy: isProcessing, run } = useSingleFlight();
 
-  const activeStepInfo = STEPS[currentStep - 1];
+  const shown = STEPS[viewStep - 1];
+  const isReviewing = viewStep !== currentStep;
 
-  const handleStepAction = async () => {
-    setIsProcessing(true);
+  const advance = (to: number) => {
+    setCurrentStep(to);
+    setViewStep(to);
+  };
+
+  const handleStepAction = () =>
+    run(async () => {
     try {
       switch (currentStep) {
         case 1:
-          onLog("Step 1: Private Task Created. Task ID: task_compute_demo_01.", "info");
-          setCurrentStep(2);
+          onLog("Walkthrough: private task created (task_compute_demo_01).", "info");
+          advance(2);
           break;
-
         case 2:
-          onLog("Step 2: Policy Defined: Max 10 DUST, Per-tx 3 DUST, Category COMPUTE.", "info");
-          setCurrentStep(3);
+          onLog("Walkthrough: policy saved. 10 DUST ceiling, 3 DUST per purchase, COMPUTE only.", "info");
+          advance(3);
           break;
-
         case 3:
-          onLog("Step 3: Policy Commitment anchored cryptographically. Agent granted capability token.", "success");
-          setCurrentStep(4);
+          onLog("Walkthrough: policy commitment anchored. Agent holds a bounded capability token.", "success");
+          advance(4);
           break;
-
         case 4:
-          onLog("Step 4: Compute Service selected: 'Secure Enclave Compute Node' (srv_compute_alpha).", "info");
-          setCurrentStep(5);
+          onLog("Walkthrough: provider selected (srv_compute_alpha, secure enclave).", "info");
+          advance(5);
           break;
-
         case 5: {
-          onLog("Step 5: Agent requesting procurement under TaskPolicy...", "info");
           const record = await pactraUiService.procureComputeJob({
             jobId: `job_comp_${Date.now().toString(36)}`,
             serviceId: "srv_compute_alpha",
@@ -133,465 +129,224 @@ export const ComputeGuidedDemo: React.FC<ComputeGuidedDemoProps> = ({
             maxDurationSeconds: 30,
           });
           setProcurementRecord(record);
-          onLog(`Step 5 Complete: Policy approved procurement ${record.procurementId}. Reserved 3 DUST.`, "success");
-          setCurrentStep(6);
+          onLog(`Walkthrough: policy approved purchase ${record.procurementId}. 3 DUST reserved.`, "success");
+          advance(6);
           break;
         }
-
         case 6:
-          onLog("Step 6: Escrow reserved: 3 DUST committed. Escrow state transitioned to ACTIVE.", "info");
-          setCurrentStep(7);
+          onLog("Walkthrough: 3 DUST locked in escrow.", "info");
+          advance(7);
           break;
-
         case 7: {
           if (!procurementRecord) {
-            throw new Error("No active procurement record found. Please restart from Step 5.");
+            throw new Error("No purchase on record. Restart from step 5.");
           }
-          onLog("Step 7: Enclave executing workload. Generating cryptographic evidence package...", "info");
           const ev = await pactraUiService.executeProcurement(
             procurementRecord.procurementId,
             simulateFailure ? "INVALID_EVIDENCE" : undefined
           );
           setEvidence(ev);
-          onLog(`Step 7 Complete: Received execution evidence from ${ev.providerCommitment.slice(0, 16)}...`, "success");
-          setCurrentStep(8);
+          onLog(`Walkthrough: evidence received from ${ev.providerCommitment.slice(0, 16)}...`, "success");
+          advance(8);
           break;
         }
-
         case 8: {
           if (!evidence) {
-            throw new Error("No evidence found. Please complete Step 7 first.");
+            throw new Error("No evidence yet. Complete step 7 first.");
           }
-          onLog("Step 8: Verifying execution evidence against objective condition commitment...", "info");
           const vRes = pactraUiService.verifyCompletion(evidence, simulateFailure);
           setVerificationResult(vRes);
-          if (vRes.verified) {
-            onLog("Step 8 Complete: Evidence cryptographically VERIFIED! Escrow ready for settlement.", "success");
-          } else {
-            onLog(`Step 8 Alert: Verification FAILED (${vRes.failureReason}). Escrow ready for REFUND.`, "error");
-          }
-          setCurrentStep(9);
+          onLog(
+            vRes.verified ? "Walkthrough: evidence verified." : `Walkthrough: verification failed (${vRes.failureReason}).`,
+            vRes.verified ? "success" : "error"
+          );
+          advance(9);
           break;
         }
-
-        case 9: {
-          if (verificationResult?.verified) {
-            onLog("Step 9: Payout released to Provider! 3 DUST settled. Remaining budget: 7 DUST.", "success");
-            setSettled(true);
-          } else {
-            onLog("Step 9: Refund processed! 3 DUST returned to user treasury due to invalid evidence.", "info");
-            setSettled(true);
-          }
-          break;
-        }
-
-        default:
+        case 9:
+          onLog(
+            verificationResult?.verified
+              ? "Walkthrough: 3 DUST paid to the provider. 7 DUST budget left."
+              : "Walkthrough: 3 DUST refunded to you because the evidence failed.",
+            verificationResult?.verified ? "success" : "info"
+          );
+          setSettled(true);
           break;
       }
     } catch (err: any) {
-      onLog(`Action error in Step ${currentStep}: ${err.message}`, "error");
-    } finally {
-      setIsProcessing(false);
+      onLog(`Step ${currentStep} failed: ${err.message}`, "error");
     }
-  };
+    });
 
   const handleReset = () => {
-    setCurrentStep(1);
+    advance(1);
     setProcurementRecord(null);
     setEvidence(null);
     setVerificationResult(null);
     setSettled(false);
     setSimulateFailure(false);
-    onLog("Compute Guided Walkthrough reset to Step 1.", "info");
+    onLog("Walkthrough reset.", "info");
   };
 
+  const actionLabel = isProcessing
+    ? "Working..."
+    : currentStep === 9
+    ? verificationResult?.verified
+      ? "Release payment"
+      : "Refund me"
+    : shown.action;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      {/* Overview Banner */}
-      <div
-        style={{
-          background: "linear-gradient(135deg, rgba(0, 240, 255, 0.08) 0%, rgba(112, 69, 255, 0.12) 100%)",
-          border: "1px solid var(--border-cyan)",
-          borderRadius: "var(--radius-lg)",
-          padding: "24px",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-              <span style={{ fontSize: "24px" }}>⚡</span>
-              <h2 style={{ fontSize: "20px", fontWeight: 800, color: "var(--text-main)" }}>
-                End-to-End COMPUTE Service Walkthrough
-              </h2>
-              <span
-                style={{
-                  background: "rgba(0, 240, 255, 0.15)",
-                  color: "var(--cyan)",
-                  border: "1px solid rgba(0, 240, 255, 0.3)",
-                  borderRadius: "var(--radius-full)",
-                  fontSize: "11px",
-                  fontWeight: 800,
-                  padding: "2px 8px",
-                }}
-              >
-                PRIMARY MVP PATH
-              </span>
-            </div>
-            <p style={{ color: "var(--text-muted)", fontSize: "14px", maxWidth: "800px", lineHeight: "1.6" }}>
-              Experience the core Pactra lifecycle step-by-step: giving an autonomous agent bounded economic authority to discover, procure, and settle a secure compute workload without ever exposing your wallet private key or treasury.
-            </p>
-          </div>
-
-          <button
-            className="btn-secondary"
-            onClick={handleReset}
-            style={{ padding: "8px 16px", fontSize: "12px" }}
-          >
-            🔄 Reset Walkthrough
+    <div className="page">
+      <PageHead
+        num="02"
+        section="Walkthrough"
+        title="Buy one compute job without handing over your wallet."
+        lede="Nine steps through the real Pactra policy engine, procurement and verifier. It runs in your browser, so no wallet is needed. At each step you can see what stays private and what the chain would see."
+        aside={
+          <button className="btn btn--sm" onClick={handleReset} disabled={isProcessing || (currentStep === 1 && !settled)}>
+            Start over
           </button>
-        </div>
+        }
+      />
 
-        {/* 9-Step Visual Stepper */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(105px, 1fr))",
-            gap: "8px",
-            marginTop: "24px",
-          }}
-        >
-          {STEPS.map((s) => {
-            const isCompleted = s.number < currentStep || (currentStep === 9 && settled);
-            const isCurrent = s.number === currentStep && !(currentStep === 9 && settled);
-
+      <div className="cols-split cols-steps">
+        <ol className="steplist" aria-label="Steps">
+          {STEPS.map((s, i) => {
+            const n = i + 1;
+            const done = n < currentStep || (n === 9 && settled);
+            const cur = n === currentStep && !settled;
             return (
-              <div
-                key={s.number}
-                onClick={() => {
-                  if (s.number <= currentStep) {
-                    // allow reviewing earlier completed steps
-                  }
-                }}
-                style={{
-                  padding: "10px 8px",
-                  borderRadius: "var(--radius-sm)",
-                  background: isCurrent
-                    ? "rgba(0, 240, 255, 0.15)"
-                    : isCompleted
-                    ? "rgba(0, 230, 153, 0.12)"
-                    : "rgba(255, 255, 255, 0.03)",
-                  border: isCurrent
-                    ? "1px solid var(--cyan)"
-                    : isCompleted
-                    ? "1px solid var(--emerald)"
-                    : "1px solid var(--border-subtle)",
-                  textAlign: "center",
-                  transition: "var(--transition)",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "12px",
-                    fontWeight: 800,
-                    color: isCurrent
-                      ? "var(--cyan)"
-                      : isCompleted
-                      ? "var(--emerald)"
-                      : "var(--text-dim)",
-                    marginBottom: "4px",
-                  }}
+              <li key={s.title}>
+                <button
+                  className={done ? "is-done" : cur ? "is-current" : ""}
+                  onClick={() => (done || cur) && !isProcessing && setViewStep(n)}
+                  aria-current={viewStep === n ? "step" : undefined}
+                  disabled={!done && !cur}
+                  style={viewStep === n && !cur ? { background: "var(--paper-2)" } : undefined}
                 >
-                  {isCompleted ? "✓ " : ""}{s.number}
-                </div>
-                <div
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    color: isCurrent ? "var(--text-main)" : isCompleted ? "var(--text-main)" : "var(--text-muted)",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                  title={s.title}
-                >
-                  {s.title.split(". ")[1]}
-                </div>
-              </div>
+                  <span className="step-n">{String(n).padStart(2, "0")}</span>
+                  <span>{s.title}</span>
+                  {done ? <Mark tone="ok" /> : cur ? <Mark kind="half" tone="seal" /> : <Mark kind="empty" tone="faint" />}
+                </button>
+              </li>
             );
           })}
-        </div>
-      </div>
+        </ol>
 
-      {/* Active Step Interactive Card */}
-      <div
-        style={{
-          background: "var(--bg-card)",
-          border: "1px solid var(--border-glow)",
-          borderRadius: "var(--radius-lg)",
-          padding: "26px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "20px",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
-          <div>
-            <span
-              style={{
-                fontSize: "12px",
-                fontWeight: 800,
-                color: "var(--cyan)",
-                letterSpacing: "0.5px",
-                textTransform: "uppercase",
-              }}
-            >
-              Step {activeStepInfo.number} of 9
-            </span>
-            <h3 style={{ fontSize: "22px", fontWeight: 800, color: "var(--text-main)", marginTop: "4px" }}>
-              {activeStepInfo.title}
-            </h3>
-            <p style={{ color: "var(--text-muted)", fontSize: "14px", marginTop: "6px" }}>
-              {activeStepInfo.shortDesc}
-            </p>
+        <section className="sheet" aria-labelledby="step-title">
+          <div className="sheet-head">
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>
+                <span className="num">Step {viewStep} of 9</span>
+                {isReviewing && <span>Reviewing</span>}
+              </div>
+              <h2 className="section" id="step-title">
+                {shown.title}
+              </h2>
+            </div>
+            {isReviewing ? (
+              <button className="btn btn--sm" onClick={() => setViewStep(currentStep)}>
+                Back to step {currentStep}
+              </button>
+            ) : settled ? (
+              <Tag tone={verificationResult?.verified ? "ok" : "bad"}>{verificationResult?.verified ? "Paid" : "Refunded"}</Tag>
+            ) : (
+              <button className="btn btn--seal" disabled={isProcessing} onClick={handleStepAction}>
+                {actionLabel}
+              </button>
+            )}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {currentStep === 7 && (
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  fontSize: "12px",
-                  color: "var(--amber)",
-                  background: "rgba(255, 170, 0, 0.1)",
-                  border: "1px solid rgba(255, 170, 0, 0.3)",
-                  padding: "6px 12px",
-                  borderRadius: "var(--radius-sm)",
-                  cursor: "pointer",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={simulateFailure}
-                  onChange={(e) => setSimulateFailure(e.target.checked)}
-                />
-                Simulate Corrupted Evidence (Test Refund Branch)
+          <div className="sheet-body stack">
+            <p className="muted" style={{ fontSize: 16 }}>
+              {shown.shortDesc}
+            </p>
+
+            {currentStep === 7 && !isReviewing && (
+              <label className="row small" style={{ cursor: "pointer" }}>
+                <input type="checkbox" checked={simulateFailure} onChange={(e) => setSimulateFailure(e.target.checked)} />
+                Make the provider return corrupted evidence, to see the refund path
               </label>
             )}
 
-            <button
-              className="btn-primary"
-              disabled={isProcessing || (currentStep === 9 && settled)}
-              onClick={handleStepAction}
-              style={{
-                padding: "10px 24px",
-                fontSize: "14px",
-                fontWeight: 700,
-                boxShadow: "0 0 16px rgba(112, 69, 255, 0.35)",
-              }}
-            >
-              {isProcessing
-                ? "Processing..."
-                : currentStep === 9 && settled
-                ? "✓ Flow Completed"
-                : currentStep === 9
-                ? (verificationResult?.verified ? "Execute Settlement Release" : "Execute Refund to Creator")
-                : `Execute Step ${currentStep} →`}
-            </button>
-          </div>
-        </div>
-
-        {/* Privacy Boundary Comparison for this Step */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "16px",
-            marginTop: "10px",
-          }}
-        >
-          {/* Shielded / Off-Chain Private State */}
-          <div
-            style={{
-              background: "rgba(112, 69, 255, 0.08)",
-              border: "1px solid rgba(112, 69, 255, 0.3)",
-              borderRadius: "var(--radius-md)",
-              padding: "16px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-              <span style={{ fontSize: "16px" }}>🛡️</span>
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--primary-glow)" }}>
-                Shielded / Private Witness Data
-              </span>
-            </div>
-            <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "8px" }}>
-              {activeStepInfo.shielded.map((item, idx) => (
-                <li
-                  key={idx}
-                  style={{
-                    fontSize: "13px",
-                    color: "var(--text-main)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                  }}
-                >
-                  <span style={{ color: "var(--primary-glow)", fontSize: "10px" }}>●</span>
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Public / Observable Ledger State */}
-          <div
-            style={{
-              background: "rgba(0, 240, 255, 0.06)",
-              border: "1px solid rgba(0, 240, 255, 0.25)",
-              borderRadius: "var(--radius-md)",
-              padding: "16px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-              <span style={{ fontSize: "16px" }}>🌐</span>
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--cyan)" }}>
-                Public / Observable Ledger State
-              </span>
-            </div>
-            <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "8px" }}>
-              {activeStepInfo.observable.map((item, idx) => (
-                <li
-                  key={idx}
-                  style={{
-                    fontSize: "13px",
-                    color: "var(--text-main)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                  }}
-                >
-                  <span style={{ color: "var(--cyan)", fontSize: "10px" }}>●</span>
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* Live Step Artifacts / Details Box */}
-        <div
-          style={{
-            background: "rgba(0, 0, 0, 0.4)",
-            border: "1px solid var(--border-subtle)",
-            borderRadius: "var(--radius-md)",
-            padding: "16px",
-          }}
-        >
-          <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-dim)", marginBottom: "10px" }}>
-            LIVE CRYPTOGRAPHIC ARTIFACTS & RESOLVED STATE
-          </div>
-
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "12px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-              color: "var(--text-main)",
-            }}
-          >
-            <div>
-              <span style={{ color: "var(--text-muted)" }}>Target Service: </span>
-              <span style={{ color: "var(--cyan)" }}>srv_compute_alpha</span>
-              <span style={{ color: "var(--text-dim)" }}> (Secure Enclave Compute Node • 3 DUST)</span>
-            </div>
-
-            {procurementRecord && (
-              <>
-                <div>
-                  <span style={{ color: "var(--text-muted)" }}>Procurement ID: </span>
-                  <span style={{ color: "var(--emerald)" }}>{procurementRecord.procurementId}</span>
-                </div>
-                <div>
-                  <span style={{ color: "var(--text-muted)" }}>Capability Auth Token: </span>
-                  <span style={{ color: "var(--text-main)" }}>
-                    {procurementRecord.authToken?.authorizationId || "auth_pre_approved_token"}
-                  </span>
-                </div>
-              </>
-            )}
-
-            {evidence && (
-              <>
-                <div>
-                  <span style={{ color: "var(--text-muted)" }}>Execution Attestation / Signature: </span>
-                  <span style={{ color: "var(--amber)" }}>
-                    {evidence.evidenceSignature}
-                  </span>
-                </div>
-                <div>
-                  <span style={{ color: "var(--text-muted)" }}>Output Commitment: </span>
-                  <span style={{ color: "var(--text-main)" }}>{evidence.outputHash}</span>
-                </div>
-              </>
-            )}
-
-            {verificationResult && (
-              <div>
-                <span style={{ color: "var(--text-muted)" }}>Verifier Decision: </span>
-                <span
-                  style={{
-                    color: verificationResult.verified ? "var(--emerald)" : "var(--crimson)",
-                    fontWeight: 700,
-                  }}
-                >
-                  {verificationResult.verified ? "VERIFIED (PASSED)" : `REJECTED (${verificationResult.failureReason})`}
-                </span>
+            <div className="ruled-2">
+              <div className="sheet-body disclose disclose--shielded">
+                <h4>
+                  <Mark /> Stays private
+                </h4>
+                <ul>
+                  {shown.shielded.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
               </div>
-            )}
+              <div className="sheet-body disclose disclose--public">
+                <h4>
+                  <Mark kind="empty" /> Visible on-chain
+                </h4>
+                <ul>
+                  {shown.observable.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div className="sheet-foot">
+            <h3 className="sub" style={{ marginBottom: 10 }}>
+              Produced so far
+            </h3>
+            <dl className="kv">
+              <dt>Provider</dt>
+              <dd>
+                <span className="hash">srv_compute_alpha</span> <span className="faint">3 DUST</span>
+              </dd>
+              <dt>Purchase id</dt>
+              <dd>
+                <Hash value={procurementRecord?.procurementId} empty="After step 5" />
+              </dd>
+              <dt>Capability token</dt>
+              <dd>
+                <Hash value={procurementRecord ? procurementRecord.authToken?.authorizationId || "auth_pre_approved_token" : null} empty="After step 5" />
+              </dd>
+              <dt>Attestation</dt>
+              <dd>
+                <Hash value={evidence?.evidenceSignature} empty="After step 7" />
+              </dd>
+              <dt>Output commitment</dt>
+              <dd>
+                <Hash value={evidence?.outputHash} empty="After step 7" />
+              </dd>
+              <dt>Verifier</dt>
+              <dd className={verificationResult ? (verificationResult.verified ? "c-ok" : "c-bad") : "faint"}>
+                {verificationResult
+                  ? verificationResult.verified
+                    ? "Passed"
+                    : `Rejected: ${verificationResult.failureReason}`
+                  : "After step 8"}
+              </dd>
+            </dl>
 
             {settled && (
-              <div
-                style={{
-                  marginTop: "6px",
-                  padding: "10px",
-                  background: verificationResult?.verified ? "rgba(0, 230, 153, 0.1)" : "rgba(255, 51, 102, 0.1)",
-                  border: `1px solid ${verificationResult?.verified ? "var(--emerald)" : "var(--crimson)"}`,
-                  borderRadius: "var(--radius-sm)",
-                  color: verificationResult?.verified ? "var(--emerald)" : "var(--crimson)",
-                  fontWeight: 700,
-                }}
-              >
-                {verificationResult?.verified
-                  ? "✓ Escrow Successfully Settled! 3 DUST transferred to provider. Task marked complete."
-                  : "✓ Escrow Refunded to Creator! 3 DUST returned to user treasury due to failed verification."}
+              <div className={`notice ${verificationResult?.verified ? "notice--ok" : "notice--warn"}`} style={{ marginTop: 16 }}>
+                <div className="notice-title">
+                  {verificationResult?.verified ? "3 DUST paid to the provider" : "3 DUST returned to you"}
+                </div>
+                At no point did the agent see your seed phrase, private key or full balance. It only ever held the rights in
+                the policy commitment.
+                {onNavigateToEscrow && (
+                  <div style={{ marginTop: 12 }}>
+                    <button className="btn btn--sm btn--primary" onClick={onNavigateToEscrow}>
+                      Try the same flow on the escrow contract
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
-        </div>
-
-        {/* Security Affirmation */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            fontSize: "12px",
-            color: "var(--emerald)",
-            background: "rgba(0, 230, 153, 0.08)",
-            border: "1px solid rgba(0, 230, 153, 0.25)",
-            padding: "10px 14px",
-            borderRadius: "var(--radius-sm)",
-          }}
-        >
-          <span>🔒</span>
-          <span>
-            <strong>Pactra Security Invariant:</strong> At no point in this 9-step flow did the agent receive your wallet seed phrase, private key, or unrestricted balance. All authority was bounded by the cryptographic policy commitment.
-          </span>
-        </div>
+        </section>
       </div>
     </div>
   );

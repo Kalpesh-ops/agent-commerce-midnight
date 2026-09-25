@@ -1,30 +1,29 @@
-import React, { useState } from "react";
-import {
-  pactraUiService,
-  PactraProtocolState,
-} from "../services/pactraUiService";
+import React, { useRef, useState } from "react";
+import { pactraUiService, PactraProtocolState } from "../services/pactraUiService";
 import { AgentCapability, ServiceDefinition } from "../../../contract/src/index.js";
+import { Hash, LogFn, PageHead, Tag } from "./ui";
 
 interface MarketplaceViewProps {
-  onLog: (text: string, type?: "info" | "success" | "error") => void;
+  onLog: LogFn;
   onServiceProcured?: (procurementId: string) => void;
 }
 
-const CATEGORIES: Array<"ALL" | AgentCapability> = [
-  "ALL",
-  "COMPUTE",
-  "STORAGE",
-  "API_CALL",
-  "DEPLOYMENT",
-  "DATA_PROCESSING",
-];
+const CATEGORIES: Array<"ALL" | AgentCapability> = ["ALL", "COMPUTE", "STORAGE", "API_CALL", "DEPLOYMENT", "DATA_PROCESSING"];
 
-export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
-  onLog,
-  onServiceProcured,
-}) => {
+const CATEGORY_LABEL: Record<string, string> = {
+  ALL: "All",
+  COMPUTE: "Compute",
+  STORAGE: "Storage",
+  API_CALL: "API calls",
+  DEPLOYMENT: "Deployment",
+  DATA_PROCESSING: "Data processing",
+};
+
+export const MarketplaceView: React.FC<MarketplaceViewProps> = ({ onLog, onServiceProcured }) => {
   const [selectedCategory, setSelectedCategory] = useState<"ALL" | AgentCapability>("ALL");
   const [procuringServiceId, setProcuringServiceId] = useState<string | null>(null);
+  const procuringRef = useRef(false);
+  const [lastResult, setLastResult] = useState<{ ok: boolean; text: string } | null>(null);
   const pactraState: PactraProtocolState = pactraUiService.getState();
 
   const services =
@@ -32,169 +31,110 @@ export const MarketplaceView: React.FC<MarketplaceViewProps> = ({
       ? pactraState.registryServices
       : pactraState.registryServices.filter((s) => s.category === selectedCategory);
 
+  const countFor = (cat: "ALL" | AgentCapability) =>
+    cat === "ALL" ? pactraState.registryServices.length : pactraState.registryServices.filter((s) => s.category === cat).length;
+
+  // One purchase at a time: parallel requests would each pass the budget check before either reserves funds.
   const handleProcure = async (service: ServiceDefinition) => {
+    if (procuringRef.current) return;
+    procuringRef.current = true;
     setProcuringServiceId(service.serviceId);
+    setLastResult(null);
     try {
-      onLog(
-        `Initiating policy check & micro-procurement for "${service.name}" (${service.unitPrice} DUST)...`,
-        "info"
-      );
+      onLog(`Checking policy for "${service.name}" (${service.unitPrice} DUST)...`, "info");
       const record = await pactraUiService.procureMarketplaceService(service.serviceId);
-      onLog(
-        `Policy authorized procurement! ID: ${record.procurementId}. Reserved: ${service.unitPrice} DUST.`,
-        "success"
-      );
+      onLog(`Approved. Purchase ${record.procurementId}, ${service.unitPrice} DUST reserved.`, "success");
+      setLastResult({ ok: true, text: `${service.name} approved as ${record.procurementId}. ${service.unitPrice} DUST reserved.` });
       if (onServiceProcured) {
         onServiceProcured(record.procurementId);
       }
     } catch (err: any) {
-      onLog(`Procurement blocked: ${err.message}`, "error");
+      onLog(`Purchase blocked: ${err.message}`, "error");
+      setLastResult({ ok: false, text: `${service.name} was blocked by the policy: ${err.message}` });
     } finally {
+      procuringRef.current = false;
       setProcuringServiceId(null);
     }
   };
 
-  const getCategoryColor = (cat: AgentCapability) => {
-    switch (cat) {
-      case "COMPUTE":
-        return "var(--cyan)";
-      case "STORAGE":
-        return "var(--purple)";
-      case "API_CALL":
-        return "var(--amber)";
-      case "DEPLOYMENT":
-        return "var(--emerald)";
-      case "DATA_PROCESSING":
-        return "#f43f5e";
-      default:
-        return "var(--text-muted)";
-    }
-  };
-
   return (
-    <div className="panel-card" style={{ marginTop: "24px" }}>
-      <div className="panel-header">
-        <div>
-          <h3>🏪 Generalized Multi-Service Marketplace</h3>
-          <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-            Discover and procure authorized confidential services across Compute, Storage, APIs, Deployment, and Data Processing.
-          </div>
-        </div>
-      </div>
+    <div className="page">
+      <PageHead
+        num="05"
+        section="Services"
+        title="The providers an agent may buy from."
+        lede="Each purchase goes through the same policy check. If a price or category falls outside the policy, the request is refused before any funds move."
+        aside={<Tag tone="warn">Test providers</Tag>}
+      />
 
-      {/* Category Tabs */}
-      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "16px" }}>
+      <div className="filters" role="toolbar" aria-label="Filter by category">
         {CATEGORIES.map((cat) => (
-          <button
-            key={cat}
-            className={`btn-secondary ${selectedCategory === cat ? "active" : ""}`}
-            style={{
-              padding: "6px 14px",
-              fontSize: "12px",
-              fontWeight: 700,
-              background: selectedCategory === cat ? "rgba(112, 69, 255, 0.25)" : "rgba(255, 255, 255, 0.03)",
-              borderColor: selectedCategory === cat ? "var(--purple)" : "rgba(255, 255, 255, 0.1)",
-              color: selectedCategory === cat ? "var(--cyan)" : "var(--text-muted)",
-            }}
-            onClick={() => setSelectedCategory(cat)}
-          >
-            {cat}
+          <button key={cat} aria-pressed={selectedCategory === cat} onClick={() => setSelectedCategory(cat)}>
+            {CATEGORY_LABEL[cat]} <span className="faint">{countFor(cat)}</span>
           </button>
         ))}
       </div>
 
-      {/* Services Grid */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-          gap: "14px",
-        }}
-      >
-        {services.map((service) => {
-          const isBusy = procuringServiceId === service.serviceId;
-          const catColor = getCategoryColor(service.category);
+      {lastResult && (
+        <div className={`notice ${lastResult.ok ? "notice--ok" : "notice--bad"}`} style={{ marginBottom: 16 }} role="status">
+          {lastResult.text}
+        </div>
+      )}
 
-          return (
-            <div
-              key={service.serviceId}
-              style={{
-                background: "rgba(10, 10, 25, 0.6)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                borderRadius: "var(--radius-md)",
-                padding: "16px",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                position: "relative",
-              }}
-            >
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-                  <span
-                    style={{
-                      background: `rgba(255, 255, 255, 0.05)`,
-                      border: `1px solid ${catColor}`,
-                      color: catColor,
-                      padding: "2px 8px",
-                      borderRadius: "4px",
-                      fontSize: "10px",
-                      fontWeight: 800,
-                      letterSpacing: "0.5px",
-                    }}
-                  >
-                    {service.category}
-                  </span>
-
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    <span
-                      style={{
-                        fontSize: "10px",
-                        padding: "2px 6px",
-                        borderRadius: "4px",
-                        background: service.isTestSandboxProvider ? "rgba(255, 170, 0, 0.15)" : "rgba(0, 230, 153, 0.15)",
-                        color: service.isTestSandboxProvider ? "var(--amber)" : "var(--emerald)",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {service.isTestSandboxProvider ? "🧪 Test Sandbox" : "🛡️ Production Verified"}
-                    </span>
-                  </div>
-                </div>
-
-                <h4 style={{ fontSize: "14px", fontWeight: 700, marginBottom: "6px", color: "var(--text-main)" }}>
-                  {service.name}
-                </h4>
-
-                <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "12px", lineHeight: "1.4" }}>
-                  {service.description || "Authorized provider offering verified decentralized execution."}
-                </p>
-
-                <div style={{ fontSize: "11px", color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: "4px", marginBottom: "14px" }}>
-                  <div>
-                    <strong>Pricing:</strong> {service.unitPrice.toString()} DUST ({service.pricingModel})
-                  </div>
-                  <div>
-                    <strong>Verification:</strong> {service.verificationMethod}
-                  </div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px" }}>
-                    <strong>Provider PK:</strong> {service.providerCommitment.slice(0, 16)}...
-                  </div>
-                </div>
-              </div>
-
-              <button
-                className="btn-action primary"
-                style={{ width: "100%", fontSize: "12px", padding: "8px" }}
-                disabled={isBusy || service.status !== "ACTIVE"}
-                onClick={() => handleProcure(service)}
-              >
-                {isBusy ? "Checking Policy..." : `Procure (${service.unitPrice} DUST)`}
-              </button>
-            </div>
-          );
-        })}
-      </div>
+      {services.length === 0 ? (
+        <div className="notice">No providers in this category yet.</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th className="hide-sm">Category</th>
+                <th className="hide-sm">Verification</th>
+                <th className="num">Price</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {services.map((service) => {
+                const isBusy = procuringServiceId === service.serviceId;
+                return (
+                  <tr key={service.serviceId}>
+                    <td>
+                      <div className="row" style={{ gap: 8 }}>
+                        <span style={{ fontWeight: 600 }}>{service.name}</span>
+                        {service.isTestSandboxProvider ? <Tag tone="warn">Sandbox</Tag> : <Tag tone="ok">Verified</Tag>}
+                      </div>
+                      <div className="small muted" style={{ marginTop: 2, maxWidth: "52ch" }}>
+                        {service.description || "Registered provider with verified execution."}
+                      </div>
+                      <div className="tiny faint" style={{ marginTop: 4 }}>
+                        Provider <Hash value={service.providerCommitment} head={12} tail={6} />
+                      </div>
+                    </td>
+                    <td className="hide-sm small">{CATEGORY_LABEL[service.category] ?? service.category}</td>
+                    <td className="hide-sm small muted">{String(service.verificationMethod).toLowerCase().replace(/_/g, " ")}</td>
+                    <td className="num">
+                      <div style={{ fontWeight: 600 }}>{service.unitPrice.toString()} DUST</div>
+                      <div className="tiny faint">{service.pricingModel?.toLowerCase().replace(/_/g, " ")}</div>
+                    </td>
+                    <td className="num">
+                      <button
+                        className="btn btn--sm btn--primary"
+                        disabled={procuringServiceId !== null || service.status !== "ACTIVE"}
+                        title={service.status !== "ACTIVE" ? "This provider is not taking orders right now." : undefined}
+                        onClick={() => handleProcure(service)}
+                      >
+                        {isBusy ? "Checking..." : "Buy"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { EscrowContractData } from "../services/escrowService";
-import { TxLifecycleEvent, TxLifecycleStatus } from "../services/contractClient";
+import { EscrowContractData, TaskStateName } from "../services/escrowService";
+import { TxLifecycleEvent } from "../services/contractClient";
+import { FieldError, Hash, Mark, parseAmount, useSingleFlight } from "./ui";
 
 interface RoleActionPanelProps {
   data: EscrowContractData;
@@ -17,6 +18,31 @@ interface RoleActionPanelProps {
   onResetDemo: () => void;
 }
 
+type Role = "creator" | "agent";
+
+const NEXT: Record<TaskStateName, { role: Role | null; text: string }> = {
+  UNINITIALIZED: { role: "creator", text: "Create a task and set its budget ceiling." },
+  CREATED: { role: "creator", text: "Deposit funds into the escrow." },
+  FUNDED: { role: "agent", text: "The agent accepts the task." },
+  ACTIVE: { role: "agent", text: "The agent submits a hash of its result." },
+  COMPLETION_PENDING: { role: "creator", text: "Check the evidence, then release the payout." },
+  COMPLETED: { role: null, text: "This pact is settled. Reset to run another." },
+  REFUNDED: { role: null, text: "Funds went back to the creator. Reset to run another." },
+};
+
+const TX_STAGES = ["READY", "WALLET_REQUIRED", "USER_SIGNATURE_REQUIRED", "SUBMITTED", "CONFIRMING", "CONFIRMED", "INDEXED"];
+const TX_LABEL: Record<string, string> = {
+  READY: "Ready",
+  WALLET_REQUIRED: "Wallet",
+  USER_SIGNATURE_REQUIRED: "Sign",
+  SUBMITTED: "Submitted",
+  CONFIRMING: "Confirming",
+  CONFIRMED: "Confirmed",
+  INDEXED: "Indexed",
+};
+
+const AMOUNT_HINT = "Enter a whole number of DUST, 1 or more.";
+
 export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
   data,
   isLiveMode,
@@ -31,486 +57,428 @@ export const RoleActionPanel: React.FC<RoleActionPanelProps> = ({
   onRefundTask,
   onResetDemo,
 }) => {
-  const [role, setRole] = useState<"creator" | "agent">("creator");
-  const [budgetInput, setBudgetInput] = useState<number>(500);
-  const [fundInput, setFundInput] = useState<number>(250);
-  const [payoutInput, setPayoutInput] = useState<number>(250);
+  const [role, setRole] = useState<Role>("creator");
+  const [budgetRaw, setBudgetRaw] = useState<string>("500");
+  const [fundRaw, setFundRaw] = useState<string>("250");
+  const [payoutRaw, setPayoutRaw] = useState<string>("250");
   const [evidenceInput, setEvidenceInput] = useState<string>("0xipfs_result_sha256_output_data_valid");
   const [joinAddressInput, setJoinAddressInput] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
   const [actionError, setActionError] = useState<{ message: string; recovery: string } | null>(null);
+  const { busy: loading, run } = useSingleFlight();
 
-  const isBusy = Boolean(
-    loading || (txLifecycle && ["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(txLifecycle.status))
-  );
+  const txPending = Boolean(txLifecycle && ["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(txLifecycle.status));
+  const isBusy = loading || txPending;
 
-  const handleAction = async (action: () => Promise<void>, actionName: string = "action") => {
-    if (isBusy) {
-      return;
-    }
-    setLoading(true);
-    setActionError(null);
-    try {
-      await action();
-    } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      let recovery = "Check that Lace is unlocked and Midnight Preprod Indexer is reachable, then retry.";
+  const next = NEXT[data.taskState];
 
-      if (/reject|denied|cancel/i.test(errMsg)) {
-        recovery = "Transaction authorization was rejected in Lace. Click retry whenever you're ready to proceed.";
-      } else if (/insufficient|balance|dust/i.test(errMsg)) {
-        recovery = "Your wallet has insufficient DUST for this operation. Request free testnet funds via Nethermind Faucet.";
-      } else if (/timeout|timed out/i.test(errMsg)) {
-        recovery = "Transaction took longer than expected to confirm. Check Lace activity tab or click Refresh Indexer.";
-      } else if (/network|preprod|unsupported/i.test(errMsg)) {
-        recovery = "Ensure Lace extension network selector is set to 'Midnight Preprod'.";
+  // Amounts are whole DUST; the contract rejects anything else, so catch it before the wallet prompt.
+  const budget = parseAmount(budgetRaw);
+  const fund = parseAmount(fundRaw);
+  const payout = parseAmount(payoutRaw);
+  const room = Math.max(0, data.maxBudget - data.escrowedAmount);
+  const joinAddress = joinAddressInput.trim().replace(/^0x/i, "");
+  const joinValid = /^[0-9a-f]{64,70}$/i.test(joinAddress);
+
+  const budgetError = budget === null ? AMOUNT_HINT : null;
+  const fundFull = room === 0;
+  const fundError = fundFull
+    ? null
+    : fund === null
+      ? AMOUNT_HINT
+      : fund > room
+      ? `That is over the ceiling. You can add up to ${room}.`
+      : null;
+  const payoutError =
+    payout === null ? AMOUNT_HINT : payout > data.escrowedAmount ? `Only ${data.escrowedAmount} DUST is in escrow.` : null;
+  const evidenceError = evidenceInput.trim() === "" ? "Enter the hash of the result." : null;
+  const joinError =
+    joinAddressInput.trim() !== "" && !joinValid
+      ? "That does not look like a contract address. Expect 64 to 70 hex characters, usually starting with 0200."
+      : null;
+
+  const handleAction = (action: () => Promise<void>) =>
+    run(async () => {
+      if (txPending) return;
+      setActionError(null);
+      try {
+        await action();
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        let recovery = "Check that Lace is unlocked and the Preprod indexer is reachable, then try again.";
+
+        if (/reject|denied|cancel/i.test(errMsg)) {
+          recovery = "You declined the request in Lace. Try again when you are ready.";
+        } else if (/insufficient|balance|dust/i.test(errMsg)) {
+          recovery = "Your wallet does not have enough DUST. Get free test funds from the Nethermind faucet.";
+        } else if (/timeout|timed out/i.test(errMsg)) {
+          recovery = "Confirmation is taking longer than usual. Check the Lace activity tab, then press Sync on the ledger.";
+        } else if (/network|preprod|unsupported/i.test(errMsg)) {
+          recovery = "Set the network selector inside Lace to Midnight Preprod.";
+        }
+
+        setActionError({ message: errMsg, recovery });
       }
+    });
 
-      setActionError({
-        message: errMsg,
-        recovery,
-      });
-    } finally {
-      setLoading(false);
-    }
+  const handleRefund = () => {
+    const msg = isLiveMode
+      ? `Cancel this task and return ${data.escrowedAmount} DUST to the creator? This sends a transaction and cannot be undone.`
+      : "Cancel this task and refund the creator?";
+    if (window.confirm(msg)) handleAction(onRefundTask);
   };
 
+  const txCurrent = txLifecycle?.status === "PENDING_USER_SIGNATURE" ? "USER_SIGNATURE_REQUIRED" : txLifecycle?.status;
+  const txIdx = TX_STAGES.indexOf(txCurrent || "");
+
   return (
-    <div className="panel-card">
-      <div className="panel-header">
+    <section className="sheet" aria-labelledby="actions-title" aria-busy={isBusy}>
+      <div className="sheet-head">
         <div>
-          <h3>Protocol Actions & Authorization</h3>
-          <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-            {isLiveMode
-              ? "All actions submit genuine Midnight Zero-Knowledge transactions through Lace."
-              : "Running in local simulation mode. Connect Lace on Preprod for live deployment."}
+          <h3 className="sub" id="actions-title">
+            Actions
+          </h3>
+          <div className="tiny faint">
+            {isLiveMode ? "Each action is a zero-knowledge transaction you sign in Lace." : "Simulation. Nothing is sent on-chain."}
           </div>
         </div>
         {!isLiveMode && (
-          <button
-            className="btn-secondary"
-            style={{ padding: "4px 10px", fontSize: "12px" }}
-            onClick={onResetDemo}
-            title="Reset demo simulation"
-          >
-            Reset Demo
+          <button className="linkbtn" onClick={onResetDemo} disabled={isBusy}>
+            Reset simulation
           </button>
         )}
       </div>
 
-      {/* Action Error & Recovery Guidance Box */}
-      {actionError && (
-        <div
-          id="action-error-recovery-card"
-          style={{
-            background: "rgba(255, 51, 102, 0.12)",
-            border: "1px solid var(--crimson)",
-            borderRadius: "var(--radius-md)",
-            padding: "14px 16px",
-            marginBottom: "18px",
-            fontSize: "13px",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
-            <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
-              <span style={{ fontSize: "18px" }}>⚠️</span>
+      <div className="sheet-body stack">
+        {actionError && (
+          <div id="action-error-recovery-card" className="notice notice--bad" role="alert">
+            <div className="row-between" style={{ alignItems: "flex-start", flexWrap: "nowrap" }}>
               <div>
-                <div style={{ fontWeight: 700, color: "var(--crimson)", fontSize: "13px" }}>
-                  Action Notice: {actionError.message}
-                </div>
-                <div style={{ color: "var(--text-main)", marginTop: "4px", fontSize: "12px", lineHeight: "1.4" }}>
-                  💡 <strong>Recovery:</strong> {actionError.recovery}
-                </div>
+                <div className="notice-title">{actionError.message}</div>
+                <div>{actionError.recovery}</div>
               </div>
+              <button className="close-x" onClick={() => setActionError(null)} aria-label="Dismiss error" />
             </div>
+          </div>
+        )}
+
+        {txLifecycle && txLifecycle.status !== "IDLE" && (
+          <div
+            id="tx-lifecycle-tracker"
+            className={`notice ${
+              txLifecycle.status === "FAILED"
+                ? "notice--bad"
+                : txLifecycle.status === "CONFIRMED" || txLifecycle.status === "INDEXED"
+                ? "notice--ok"
+                : ""
+            }`}
+            aria-live="polite"
+          >
+            <div className="notice-title">Transaction: {txLifecycle.status.replace(/_/g, " ").toLowerCase()}</div>
+            <div className="row" style={{ gap: "4px 14px", margin: "6px 0 8px" }}>
+              {TX_STAGES.map((stage, idx) => {
+                const passed = txIdx !== -1 && idx < txIdx;
+                const cur = stage === txCurrent;
+                return (
+                  <span key={stage} className={`tiny row ${cur ? "" : passed ? "muted" : "faint"}`} style={{ gap: 5, fontWeight: cur ? 600 : 400 }}>
+                    <Mark kind={passed ? "fill" : cur ? "half" : "empty"} tone={cur ? "seal" : undefined} />
+                    {TX_LABEL[stage]}
+                  </span>
+                );
+              })}
+            </div>
+            <div className="small">{txLifecycle.message}</div>
+            {txLifecycle.txHash && (
+              <div className="tiny" style={{ marginTop: 4 }}>
+                Tx <Hash value={txLifecycle.txHash} head={14} tail={10} />
+                {txLifecycle.blockHeight && <span className="faint"> in block #{txLifecycle.blockHeight}</span>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!data.contractAddress ? (
+          <div className="notice">
+            <div className="notice-title">Deploy a contract to go live</div>
+            <p className="small" style={{ marginBottom: 12 }}>
+              You can use the actions below in simulation right away. To send real transactions, deploy TaskEscrow to
+              Preprod with Lace (about a minute, paid in test DUST) or attach an address someone shared with you.
+            </p>
             <button
-              onClick={() => setActionError(null)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                fontSize: "16px",
-                lineHeight: 1,
+              id="btn-deploy-preprod"
+              className="btn btn--primary btn--block"
+              disabled={isBusy}
+              onClick={() => handleAction(onDeployContract)}
+            >
+              {isBusy ? "Deploying on Preprod..." : "Deploy TaskEscrow to Preprod"}
+            </button>
+            <label className="label" htmlFor="join-address" style={{ marginTop: 14 }}>
+              Or attach an existing contract
+            </label>
+            <form
+              className="inline-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (joinValid && !isBusy) handleAction(() => onJoinContract(joinAddressInput.trim()));
               }}
             >
-              ✕
-            </button>
+              <input
+                id="join-address"
+                type="text"
+                placeholder="0200..."
+                className="input mono"
+                value={joinAddressInput}
+                onChange={(e) => setJoinAddressInput(e.target.value)}
+                aria-invalid={Boolean(joinError)}
+                aria-describedby="join-error"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button type="submit" className="btn" disabled={isBusy || !joinValid}>
+                Attach
+              </button>
+            </form>
+            <FieldError id="join-error">{joinError}</FieldError>
+            <p className="hint">
+              Need test funds? Use the{" "}
+              <a href="https://midnight-tmnight-preprod.nethermind.dev/" target="_blank" rel="noreferrer">
+                Nethermind faucet
+              </a>
+              .
+            </p>
           </div>
-        </div>
-      )}
-
-      {/* Real Transaction Lifecycle Progress Tracker */}
-      {txLifecycle && txLifecycle.status !== "IDLE" && (
-        <div
-          id="tx-lifecycle-tracker"
-          style={{
-            background:
-              txLifecycle.status === "INDEXED" || txLifecycle.status === "CONFIRMED"
-                ? "rgba(0, 230, 153, 0.1)"
-                : txLifecycle.status === "FAILED"
-                ? "rgba(255, 51, 102, 0.12)"
-                : "rgba(112, 69, 255, 0.15)",
-            border: `1px solid ${
-              txLifecycle.status === "INDEXED" || txLifecycle.status === "CONFIRMED"
-                ? "var(--emerald)"
-                : txLifecycle.status === "FAILED"
-                ? "var(--crimson)"
-                : "var(--border-glow)"
-            }`,
-            borderRadius: "var(--radius-md)",
-            padding: "14px 16px",
-            marginBottom: "18px",
-            fontSize: "13px",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-            <span style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "11px", letterSpacing: "0.5px" }}>
-              Midnight Transaction Lifecycle: <span style={{ color: txLifecycle.status === "FAILED" ? "var(--crimson)" : "var(--cyan)" }}>{txLifecycle.status}</span>
+        ) : (
+          <div className="row-between small">
+            <span className="row">
+              <Mark tone="ok" />
+              Contract <Hash value={data.contractAddress} />
             </span>
-            {isBusy && <span className="network-indicator-dot"></span>}
-          </div>
-
-          {/* Stepper progression bar */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-              marginBottom: "10px",
-              overflowX: "auto",
-              paddingBottom: "4px",
-            }}
-          >
-            {(
-              [
-                "READY",
-                "WALLET_REQUIRED",
-                "USER_SIGNATURE_REQUIRED",
-                "SUBMITTED",
-                "CONFIRMING",
-                "CONFIRMED",
-                "INDEXED",
-              ] as const
-            ).map((stage, idx) => {
-              const stages = [
-                "READY",
-                "WALLET_REQUIRED",
-                "USER_SIGNATURE_REQUIRED",
-                "SUBMITTED",
-                "CONFIRMING",
-                "CONFIRMED",
-                "INDEXED",
-              ];
-              const currentStatus = txLifecycle.status === "PENDING_USER_SIGNATURE" ? "USER_SIGNATURE_REQUIRED" : txLifecycle.status;
-              const currentIdx = stages.indexOf(currentStatus as any);
-              const isCurrent = currentStatus === stage;
-              const isPassed = currentIdx !== -1 && idx < currentIdx;
-
-              return (
-                <React.Fragment key={stage}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      background: isCurrent
-                        ? "rgba(0, 229, 255, 0.25)"
-                        : isPassed
-                        ? "rgba(0, 230, 153, 0.2)"
-                        : "rgba(255, 255, 255, 0.05)",
-                      border: `1px solid ${
-                        isCurrent
-                          ? "var(--cyan)"
-                          : isPassed
-                          ? "var(--emerald)"
-                          : "rgba(255, 255, 255, 0.1)"
-                      }`,
-                      color: isCurrent
-                        ? "var(--cyan)"
-                        : isPassed
-                        ? "var(--emerald)"
-                        : "var(--text-muted)",
-                      padding: "2px 6px",
-                      borderRadius: "4px",
-                      fontSize: "9px",
-                      fontWeight: 700,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {isPassed ? "✓ " : isCurrent ? "● " : ""}{stage}
-                  </div>
-                  {idx < stages.length - 1 && (
-                    <span style={{ color: isPassed ? "var(--emerald)" : "var(--text-muted)", fontSize: "9px" }}>
-                      →
-                    </span>
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </div>
-
-          <p style={{ color: "var(--text-main)", marginBottom: "4px" }}>{txLifecycle.message}</p>
-          {txLifecycle.txHash && (
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--emerald)" }}>
-              Tx ID: {txLifecycle.txHash}
-            </div>
-          )}
-          {txLifecycle.blockHeight && (
-            <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-              Confirmed in Block #{txLifecycle.blockHeight}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Contract Deployment & Joining controls */}
-      {!data.contractAddress ? (
-        <div style={{ background: "rgba(112, 69, 255, 0.12)", border: "1px solid var(--border-glow)", padding: "16px", borderRadius: "var(--radius-md)", marginBottom: "20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-            <h4 style={{ fontSize: "14px", margin: 0, color: "var(--cyan)", display: "flex", alignItems: "center", gap: "6px" }}>
-              <span>🚀</span> On-Chain Midnight Preprod Deployment Required
-            </h4>
-            <span style={{ fontSize: "11px", color: "var(--amber)", fontWeight: 700 }}>
-              NOT YET DEPLOYED
-            </span>
-          </div>
-          <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "14px", lineHeight: "1.5" }}>
-            To execute genuine zero-knowledge transactions on-chain, deploy the TaskEscrow smart contract to Midnight Preprod with your Lace wallet, or connect to an existing contract address.
-          </p>
-
-          <button
-            id="btn-deploy-preprod"
-            className="btn-action primary"
-            style={{ width: "100%", marginBottom: "12px", padding: "12px", fontSize: "14px", fontWeight: 700 }}
-            disabled={isBusy}
-            onClick={() => handleAction(onDeployContract, "deployContract")}
-          >
-            {isBusy ? "Balancing & Deploying on Preprod..." : "🚀 Deploy TaskEscrow Contract to Preprod"}
-          </button>
-
-          <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
-            <input
-              type="text"
-              placeholder="Or paste existing deployed contract address (0200...)"
-              className="form-input"
-              value={joinAddressInput}
-              onChange={(e) => setJoinAddressInput(e.target.value)}
-              style={{ flex: 1, fontSize: "12px" }}
-            />
             <button
-              className="btn-secondary"
-              disabled={isBusy || !joinAddressInput}
-              onClick={() => handleAction(() => onJoinContract(joinAddressInput), "joinContract")}
-            >
-              Attach
-            </button>
-          </div>
-          <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "8px" }}>
-            Need testnet funds? Get free tNight / Dust from the <a href="https://midnight-tmnight-preprod.nethermind.dev/" target="_blank" rel="noreferrer" style={{ color: "var(--cyan)", textDecoration: "underline" }}>Nethermind Faucet</a>.
-          </div>
-        </div>
-      ) : (
-        <div style={{ background: "rgba(0, 230, 153, 0.08)", border: "1px solid rgba(0, 230, 153, 0.25)", padding: "12px 16px", borderRadius: "var(--radius-md)", marginBottom: "18px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ color: "var(--emerald)", fontSize: "14px" }}>●</span>
-              <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--emerald)" }}>ON-CHAIN CONTRACT ATTACHED:</span>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-main)" }}>
-                {data.contractAddress.slice(0, 10)}...{data.contractAddress.slice(-8)}
-              </span>
-            </div>
-            <button
-              className="btn-secondary"
-              style={{ padding: "3px 8px", fontSize: "11px" }}
+              className="linkbtn"
+              disabled={isBusy}
               onClick={() => {
-                if (window.confirm("Disconnect active contract address? You can redeploy or attach another.")) {
+                if (window.confirm("Detach this contract? You can redeploy or attach another afterwards.")) {
                   localStorage.removeItem("midnight_task_escrow_contract_address");
                   window.location.reload();
                 }
               }}
-              title="Switch or redeploy contract"
             >
-              Change Contract
+              Change contract
             </button>
           </div>
+        )}
+
+        <div className="notice notice--next">
+          <div className="notice-title">Next</div>
+          <div className="row-between">
+            <span>{next.text}</span>
+            {next.role && next.role !== role && (
+              <button className="linkbtn" onClick={() => setRole(next.role as Role)}>
+                Switch to {next.role}
+              </button>
+            )}
+          </div>
         </div>
-      )}
 
-      <div className="tab-switcher">
-        <button
-          id="tab-creator"
-          className={`tab-btn ${role === "creator" ? "active" : ""}`}
-          onClick={() => setRole("creator")}
-        >
-          👤 Task Creator (User)
-        </button>
-        <button
-          id="tab-agent"
-          className={`tab-btn ${role === "agent" ? "active" : ""}`}
-          onClick={() => setRole("agent")}
-        >
-          🤖 Autonomous Agent
-        </button>
-      </div>
-
-      {role === "creator" && (
-        <div>
-          {data.taskState === "UNINITIALIZED" && (
-            <div>
-              <div className="form-group">
-                <label className="form-label">Maximum Task Budget (Upper Bound Limit)</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={budgetInput}
-                  onChange={(e) => setBudgetInput(Number(e.target.value))}
-                  min={1}
-                />
-              </div>
-              <button
-                id="btn-create-task"
-                className="btn-action primary"
-                style={{ width: "100%" }}
-                disabled={isBusy || budgetInput <= 0}
-                onClick={() => handleAction(() => onCreateTask(budgetInput))}
-              >
-                {isBusy ? "Submitting to Network..." : "1. Initialize Task Escrow (createTask)"}
-              </button>
-            </div>
-          )}
-
-          {(data.taskState === "CREATED" || data.taskState === "FUNDED") && (
-            <div style={{ marginTop: "14px" }}>
-              <div className="form-group">
-                <label className="form-label">
-                  Deposit to Escrow (Current: {data.escrowedAmount} / Max: {data.maxBudget})
-                </label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={fundInput}
-                  onChange={(e) => setFundInput(Number(e.target.value))}
-                  max={data.maxBudget - data.escrowedAmount}
-                  min={1}
-                />
-              </div>
-              <button
-                id="btn-fund-task"
-                className="btn-action cyan"
-                style={{ width: "100%" }}
-                disabled={
-                  isBusy ||
-                  fundInput <= 0 ||
-                  data.escrowedAmount + fundInput > data.maxBudget
-                }
-                onClick={() => handleAction(() => onFundTask(fundInput))}
-              >
-                {isBusy ? "Submitting Deposit..." : "2. Fund Escrow Balance (fundTask)"}
-              </button>
-            </div>
-          )}
-
-          {data.taskState === "COMPLETION_PENDING" && (
-            <div style={{ marginTop: "14px" }}>
-              <div className="form-group">
-                <label className="form-label">
-                  Verified Settlement Payout (Escrowed: {data.escrowedAmount})
-                </label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={payoutInput}
-                  onChange={(e) => setPayoutInput(Number(e.target.value))}
-                  max={data.escrowedAmount}
-                  min={1}
-                />
-              </div>
-              <button
-                id="btn-settle-task"
-                className="btn-action emerald"
-                style={{ width: "100%" }}
-                disabled={isBusy || payoutInput <= 0 || payoutInput > data.escrowedAmount}
-                onClick={() => handleAction(() => onSettleTask(payoutInput))}
-              >
-                {isBusy ? "Releasing Payout..." : "5. Verify Conditions & Release Settlement (settleTask)"}
-              </button>
-            </div>
-          )}
-
-          {["CREATED", "FUNDED", "ACTIVE", "COMPLETION_PENDING"].includes(data.taskState) && (
-            <div style={{ marginTop: "20px" }}>
-              <button
-                id="btn-refund-task"
-                className="btn-action danger"
-                style={{ width: "100%" }}
-                disabled={isBusy}
-                onClick={() => handleAction(onRefundTask)}
-              >
-                {isBusy ? "Processing..." : "Claim Refund (refundTask)"}
-              </button>
-            </div>
-          )}
-
-          {(data.taskState === "COMPLETED" || data.taskState === "REFUNDED") && (
-            <div style={{ padding: "16px", textAlign: "center", color: "var(--text-muted)" }}>
-              Task is finalized in status: <strong>{data.taskState}</strong>.
-            </div>
-          )}
+        <div className="segmented segmented--block" role="tablist" aria-label="Act as">
+          <button id="tab-creator" role="tab" aria-selected={role === "creator"} onClick={() => setRole("creator")}>
+            Creator
+          </button>
+          <button id="tab-agent" role="tab" aria-selected={role === "agent"} onClick={() => setRole("agent")}>
+            Agent
+          </button>
         </div>
-      )}
 
-      {role === "agent" && (
-        <div>
-          {data.taskState === "FUNDED" && (
-            <div>
-              <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "16px" }}>
-                The task is funded with <strong>{data.escrowedAmount} DUST</strong>. As the authorized agent, you can accept and lock the execution contract.
+        {role === "creator" && (
+          <div className="stack">
+            {data.taskState === "UNINITIALIZED" && (
+              <form
+                noValidate
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (budget !== null && !isBusy) handleAction(() => onCreateTask(budget));
+                }}
+              >
+                <div className="field">
+                  <label className="label" htmlFor="budget">
+                    Budget ceiling (DUST)
+                  </label>
+                  <input
+                    id="budget"
+                    type="number"
+                    inputMode="numeric"
+                    className="input"
+                    value={budgetRaw}
+                    onChange={(e) => setBudgetRaw(e.target.value)}
+                    min={1}
+                    step={1}
+                    required
+                    aria-invalid={Boolean(budgetError)}
+                    aria-describedby="budget-error"
+                  />
+                  <FieldError id="budget-error">{budgetError}</FieldError>
+                  {!budgetError && <p className="hint">The most this task can ever spend. The agent cannot raise it.</p>}
+                </div>
+                <button id="btn-create-task" type="submit" className="btn btn--primary btn--block" style={{ marginTop: 16 }} disabled={isBusy || budget === null}>
+                  {isBusy ? "Submitting..." : "Create task"}
+                </button>
+              </form>
+            )}
+
+            {(data.taskState === "CREATED" || data.taskState === "FUNDED") && (
+              <form
+                noValidate
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (fund !== null && !fundFull && !fundError && !isBusy) handleAction(() => onFundTask(fund));
+                }}
+              >
+                <div className="field">
+                  <label className="label" htmlFor="fund">
+                    Deposit (DUST)
+                  </label>
+                  <input
+                    id="fund"
+                    type="number"
+                    inputMode="numeric"
+                    className="input"
+                    value={fundRaw}
+                    onChange={(e) => setFundRaw(e.target.value)}
+                    max={room}
+                    min={1}
+                    step={1}
+                    required
+                    disabled={fundFull}
+                    aria-invalid={Boolean(fundError)}
+                    aria-describedby="fund-error"
+                  />
+                  <FieldError id="fund-error">{fundError}</FieldError>
+                  {!fundError && (
+                    <p className="hint">
+                      {fundFull
+                        ? `Fully funded at ${data.maxBudget} DUST. Switch to agent to accept.`
+                        : `${data.escrowedAmount} of ${data.maxBudget} held. You can add up to ${room}.`}
+                    </p>
+                  )}
+                </div>
+                <button id="btn-fund-task" type="submit" className="btn btn--primary btn--block" style={{ marginTop: 16 }} disabled={isBusy || fundFull || Boolean(fundError)}>
+                  {isBusy ? "Submitting deposit..." : "Fund escrow"}
+                </button>
+              </form>
+            )}
+
+            {data.taskState === "COMPLETION_PENDING" && (
+              <form
+                noValidate
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (payout !== null && !payoutError && !isBusy) handleAction(() => onSettleTask(payout));
+                }}
+              >
+                <div className="field">
+                  <label className="label" htmlFor="payout">
+                    Payout to agent (DUST)
+                  </label>
+                  <input
+                    id="payout"
+                    type="number"
+                    inputMode="numeric"
+                    className="input"
+                    value={payoutRaw}
+                    onChange={(e) => setPayoutRaw(e.target.value)}
+                    max={data.escrowedAmount}
+                    min={1}
+                    step={1}
+                    required
+                    aria-invalid={Boolean(payoutError)}
+                    aria-describedby="payout-error"
+                  />
+                  <FieldError id="payout-error">{payoutError}</FieldError>
+                  {!payoutError && <p className="hint">Up to {data.escrowedAmount} DUST held in escrow.</p>}
+                </div>
+                <button id="btn-settle-task" type="submit" className="btn btn--seal btn--block" style={{ marginTop: 16 }} disabled={isBusy || Boolean(payoutError)}>
+                  {isBusy ? "Releasing..." : "Release payout"}
+                </button>
+              </form>
+            )}
+
+            {data.taskState === "ACTIVE" && <p className="small muted">The agent is working. Nothing for the creator to do until it submits evidence.</p>}
+
+            {["CREATED", "FUNDED", "ACTIVE", "COMPLETION_PENDING"].includes(data.taskState) && (
+              <button id="btn-refund-task" className="btn btn--danger btn--block" disabled={isBusy} onClick={handleRefund}>
+                {isBusy ? "Processing..." : "Cancel and refund"}
+              </button>
+            )}
+
+            {(data.taskState === "COMPLETED" || data.taskState === "REFUNDED") && (
+              <p className="small muted">This task is closed ({data.taskState.toLowerCase()}).</p>
+            )}
+          </div>
+        )}
+
+        {role === "agent" && (
+          <div className="stack">
+            {data.taskState === "FUNDED" && (
+              <div>
+                <p className="small muted" style={{ marginBottom: 12 }}>
+                  {data.escrowedAmount} DUST is waiting in escrow. Accepting proves you hold the authorised agent key
+                  without revealing it.
+                </p>
+                <button id="btn-accept-task" className="btn btn--primary btn--block" disabled={isBusy} onClick={() => handleAction(onAcceptTask)}>
+                  {isBusy ? "Proving..." : "Accept task"}
+                </button>
+              </div>
+            )}
+
+            {data.taskState === "ACTIVE" && (
+              <form
+                noValidate
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!evidenceError && !isBusy) handleAction(() => onSubmitCompletion(evidenceInput.trim()));
+                }}
+              >
+                <div className="field">
+                  <label className="label" htmlFor="evidence">
+                    Result hash
+                  </label>
+                  <input
+                    id="evidence"
+                    type="text"
+                    className="input mono"
+                    value={evidenceInput}
+                    onChange={(e) => setEvidenceInput(e.target.value)}
+                    required
+                    spellCheck={false}
+                    aria-invalid={Boolean(evidenceError)}
+                    aria-describedby="evidence-error"
+                  />
+                  <FieldError id="evidence-error">{evidenceError}</FieldError>
+                  {!evidenceError && <p className="hint">A hash of the output. The output itself stays off-chain.</p>}
+                </div>
+                <button
+                  id="btn-submit-completion"
+                  type="submit"
+                  className="btn btn--primary btn--block"
+                  style={{ marginTop: 16 }}
+                  disabled={isBusy || Boolean(evidenceError)}
+                >
+                  {isBusy ? "Submitting..." : "Submit evidence"}
+                </button>
+              </form>
+            )}
+
+            {data.taskState !== "FUNDED" && data.taskState !== "ACTIVE" && (
+              <p className="small muted">
+                {data.taskState === "UNINITIALIZED" || data.taskState === "CREATED"
+                  ? "Nothing to do yet. The creator has to fund the task first."
+                  : data.taskState === "COMPLETION_PENDING"
+                  ? "Evidence is in. Waiting for the creator to settle."
+                  : "This task is closed."}
               </p>
-              <button
-                id="btn-accept-task"
-                className="btn-action primary"
-                style={{ width: "100%" }}
-                disabled={isBusy}
-                onClick={() => handleAction(onAcceptTask)}
-              >
-                {isBusy ? "Proving Authorization..." : "3. Accept & Begin Task (acceptTask)"}
-              </button>
-            </div>
-          )}
-
-          {data.taskState === "ACTIVE" && (
-            <div>
-              <div className="form-group">
-                <label className="form-label">Completion Evidence / Result Hash</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={evidenceInput}
-                  onChange={(e) => setEvidenceInput(e.target.value)}
-                />
-              </div>
-              <button
-                id="btn-submit-completion"
-                className="btn-action cyan"
-                style={{ width: "100%" }}
-                disabled={isBusy || !evidenceInput}
-                onClick={() => handleAction(() => onSubmitCompletion(evidenceInput))}
-              >
-                {isBusy ? "Submitting Evidence..." : "4. Submit Completion Evidence (submitCompletion)"}
-              </button>
-            </div>
-          )}
-
-          {data.taskState !== "FUNDED" && data.taskState !== "ACTIVE" && (
-            <div style={{ padding: "16px", textAlign: "center", color: "var(--text-muted)" }}>
-              {data.taskState === "UNINITIALIZED" || data.taskState === "CREATED"
-                ? "Waiting for task creator to fund the task."
-                : `Agent actions not applicable in current state (${data.taskState}).`}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 };

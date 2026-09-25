@@ -1,48 +1,54 @@
-import React, { useState } from "react";
-import {
-  feedbackService,
-  FeedbackCategory,
-  UserFeedbackSubmission,
-} from "../services/feedbackService";
+import React, { useRef, useState } from "react";
+import { feedbackService, FeedbackCategory, UserFeedbackSubmission } from "../services/feedbackService";
 import { telemetryService } from "../services/telemetryService";
+import { Dialog, FieldError, LogFn } from "./ui";
 
 interface FeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onLog?: (text: string, type?: "info" | "success" | "error") => void;
+  onLog?: LogFn;
 }
 
 const CATEGORIES: { value: FeedbackCategory; label: string }[] = [
-  { value: "ONBOARDING", label: "🚀 Onboarding & Clarity" },
-  { value: "WALLET", label: "👛 Lace Wallet Connection" },
-  { value: "PRIVACY", label: "🛡️ Privacy & State Boundaries" },
-  { value: "POLICY", label: "📜 Policy & Spending Bounds" },
-  { value: "PROCUREMENT", label: "🏪 Marketplace & Procurement" },
-  { value: "VERIFICATION", label: "⚖️ Evidence Verification" },
-  { value: "USABILITY", label: "✨ General Usability / UI" },
-  { value: "BUG", label: "🐛 Bug / Issue Report" },
-  { value: "FEATURE_REQUEST", label: "💡 Feature Suggestion" },
+  { value: "USABILITY", label: "General usability" },
+  { value: "ONBOARDING", label: "Getting started" },
+  { value: "WALLET", label: "Lace wallet connection" },
+  { value: "PRIVACY", label: "Privacy and what is public" },
+  { value: "POLICY", label: "Policy and spending limits" },
+  { value: "PROCUREMENT", label: "Services and purchasing" },
+  { value: "VERIFICATION", label: "Evidence and verification" },
+  { value: "BUG", label: "Something is broken" },
+  { value: "FEATURE_REQUEST", label: "Feature request" },
 ];
 
-export const FeedbackModal: React.FC<FeedbackModalProps> = ({
-  isOpen,
-  onClose,
-  onLog,
-}) => {
+export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose, onLog }) => {
   const [category, setCategory] = useState<FeedbackCategory>("USABILITY");
-  const [rating, setRating] = useState<number>(5);
+  const [rating, setRating] = useState<number>(4);
   const [title, setTitle] = useState<string>("");
   const [description, setDescription] = useState<string>("");
   const [testerHandle, setTesterHandle] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [submittedItem, setSubmittedItem] = useState<UserFeedbackSubmission | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+  const [triedSubmit, setTriedSubmit] = useState<boolean>(false);
+  const submitting = useRef(false);
 
   if (!isOpen) return null;
 
+  // Mirrors feedbackService limits so problems show next to the field instead of after submit.
+  const titleLen = title.trim().length;
+  const descLen = description.trim().length;
+  const titleError = titleLen < 3 ? "Write at least 3 characters." : null;
+  const descError = descLen < 5 ? "Write at least 5 characters." : null;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Enter plus a click, or a double click, must not save the same entry twice.
+    if (submitting.current || submittedItem) return;
+    setTriedSubmit(true);
     setError(null);
+    if (titleError || descError) return;
+    submitting.current = true;
 
     try {
       const submission = feedbackService.submitFeedback({
@@ -60,17 +66,18 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
 
       setSubmittedItem(submission);
       if (onLog) {
-        onLog(`Thank you! Feedback recorded: "${submission.title}" (${submission.feedbackId})`, "success");
+        onLog(`Feedback saved: "${submission.title}" (${submission.feedbackId})`, "success");
       }
     } catch (err: any) {
       setError(err.message);
+      // Only a failed save unlocks the form; a successful one stays locked until the dialog is reset.
+      submitting.current = false;
     }
   };
 
   const handleCopyMarkdown = () => {
     if (!submittedItem) return;
-    const md = feedbackService.exportAsMarkdown(submittedItem);
-    navigator.clipboard.writeText(md);
+    navigator.clipboard.writeText(feedbackService.exportAsMarkdown(submittedItem));
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
@@ -79,274 +86,152 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     setTitle("");
     setDescription("");
     setTesterHandle("");
-    setRating(5);
+    setRating(4);
     setCategory("USABILITY");
     setSubmittedItem(null);
     setError(null);
+    setTriedSubmit(false);
+    submitting.current = false;
     onClose();
   };
 
-  return (
-    <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: "rgba(5, 7, 15, 0.85)",
-        backdropFilter: "blur(8px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 10000,
-        padding: "20px",
-      }}
-    >
-      <div
-        style={{
-          background: "var(--bg-card)",
-          border: "1px solid var(--border-glow)",
-          borderRadius: "var(--radius-lg)",
-          maxWidth: "580px",
-          width: "100%",
-          padding: "26px",
-          position: "relative",
-          boxShadow: "0 12px 40px rgba(0, 0, 0, 0.6)",
-        }}
+  if (submittedItem) {
+    return (
+      <Dialog
+        labelId="fb-done"
+        onClose={handleReset}
+        title={<h2 className="section">Thanks, that is saved</h2>}
+        footer={
+          <>
+            <button className="btn" onClick={handleCopyMarkdown}>
+              {copied ? "Copied" : "Copy as GitHub issue"}
+            </button>
+            <button className="btn btn--primary" onClick={handleReset}>
+              Done
+            </button>
+          </>
+        }
       >
-        <button
-          onClick={handleReset}
-          style={{
-            position: "absolute",
-            top: "20px",
-            right: "20px",
-            background: "none",
-            border: "none",
-            color: "var(--text-muted)",
-            fontSize: "20px",
-            cursor: "pointer",
-          }}
-        >
-          ✕
-        </button>
+        <p className="muted" style={{ marginBottom: 16 }}>
+          It is stored in this browser as <span className="hash">{submittedItem.feedbackId}</span>. To send it to the
+          maintainers, copy it as a GitHub issue and paste it in the repository.
+        </p>
+        <dl className="kv">
+          <dt>Area</dt>
+          <dd>{CATEGORIES.find((c) => c.value === submittedItem.category)?.label}</dd>
+          <dt>Rating</dt>
+          <dd>{submittedItem.rating} of 5</dd>
+          <dt>Title</dt>
+          <dd>{submittedItem.title}</dd>
+        </dl>
+      </Dialog>
+    );
+  }
 
-        {submittedItem ? (
-          <div style={{ textAlign: "center", padding: "16px 0" }}>
-            <div style={{ fontSize: "42px", marginBottom: "12px" }}>🎉</div>
-            <h3 style={{ fontSize: "20px", fontWeight: 800, color: "var(--text-main)" }}>
-              Feedback Submitted Successfully!
-            </h3>
-            <p style={{ color: "var(--text-muted)", fontSize: "14px", marginTop: "8px", lineHeight: "1.5" }}>
-              Your feedback has been recorded locally under <code>{submittedItem.feedbackId}</code> and added to the Level 5 tester log.
-            </p>
+  return (
+    <Dialog labelId="fb-title" onClose={handleReset} title={<h2 className="section">Send feedback</h2>}>
+      <form onSubmit={handleSubmit} noValidate>
+        <p className="small muted" style={{ marginBottom: 20 }}>
+          What worked, what confused you, what broke. Never paste a seed phrase or private key.
+        </p>
 
-            <div
-              style={{
-                marginTop: "20px",
-                padding: "16px",
-                background: "rgba(0, 0, 0, 0.4)",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "var(--radius-md)",
-                textAlign: "left",
-                fontFamily: "var(--font-mono)",
-                fontSize: "12px",
-                color: "var(--text-main)",
-              }}
-            >
-              <div><strong>Category:</strong> {submittedItem.category}</div>
-              <div><strong>Rating:</strong> {"★".repeat(submittedItem.rating)} ({submittedItem.rating}/5)</div>
-              <div><strong>Title:</strong> {submittedItem.title}</div>
-            </div>
-
-            <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "24px" }}>
-              <button
-                className="btn-secondary"
-                onClick={handleCopyMarkdown}
-                style={{ padding: "8px 16px", fontSize: "13px" }}
-              >
-                {copied ? "✓ Copied to Clipboard!" : "📋 Copy as GitHub Issue"}
-              </button>
-              <button
-                className="btn-primary"
-                onClick={handleReset}
-                style={{ padding: "8px 20px", fontSize: "13px" }}
-              >
-                Close
-              </button>
-            </div>
+        {error && (
+          <div className="notice notice--bad" style={{ marginBottom: 16 }} role="alert">
+            {error}
           </div>
-        ) : (
-          <form onSubmit={handleSubmit}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-              <span style={{ fontSize: "22px" }}>💬</span>
-              <h3 style={{ fontSize: "20px", fontWeight: 800, color: "var(--text-main)" }}>
-                Preprod Tester Feedback
-              </h3>
-            </div>
-            <p style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "18px" }}>
-              Your input directly shapes Pactra's production roadmap. Never enter private keys or wallet seeds.
-            </p>
-
-            {error && (
-              <div
-                style={{
-                  background: "rgba(255, 51, 102, 0.12)",
-                  border: "1px solid var(--crimson)",
-                  borderRadius: "var(--radius-sm)",
-                  padding: "10px 12px",
-                  color: "var(--crimson)",
-                  fontSize: "12px",
-                  marginBottom: "16px",
-                }}
-              >
-                ⚠️ {error}
-              </div>
-            )}
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              {/* Category */}
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: "6px" }}>
-                  Feedback Area
-                </label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value as FeedbackCategory)}
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    background: "rgba(10, 14, 30, 0.8)",
-                    border: "1px solid var(--border-subtle)",
-                    borderRadius: "var(--radius-sm)",
-                    color: "var(--text-main)",
-                    fontSize: "13px",
-                  }}
-                >
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat.value} value={cat.value}>
-                      {cat.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Rating */}
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: "6px" }}>
-                  Experience Rating: {rating} / 5
-                </label>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => setRating(star)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        fontSize: "24px",
-                        cursor: "pointer",
-                        color: star <= rating ? "var(--amber)" : "var(--text-dim)",
-                        transition: "var(--transition)",
-                      }}
-                    >
-                      ★
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Title */}
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: "6px" }}>
-                  Summary / Title
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Lace connection was instant and smooth"
-                  required
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    background: "rgba(10, 14, 30, 0.8)",
-                    border: "1px solid var(--border-subtle)",
-                    borderRadius: "var(--radius-sm)",
-                    color: "var(--text-main)",
-                    fontSize: "13px",
-                  }}
-                />
-              </div>
-
-              {/* Description */}
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: "6px" }}>
-                  Details, Confusion, or Suggestions
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Tell us what worked, what was unclear, or what you'd like to see next..."
-                  rows={4}
-                  required
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    background: "rgba(10, 14, 30, 0.8)",
-                    border: "1px solid var(--border-subtle)",
-                    borderRadius: "var(--radius-sm)",
-                    color: "var(--text-main)",
-                    fontSize: "13px",
-                    resize: "vertical",
-                  }}
-                />
-              </div>
-
-              {/* Tester Handle */}
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: "6px" }}>
-                  Tester Handle / Name (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={testerHandle}
-                  onChange={(e) => setTesterHandle(e.target.value)}
-                  placeholder="@your_x_handle or GitHub username"
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    background: "rgba(10, 14, 30, 0.8)",
-                    border: "1px solid var(--border-subtle)",
-                    borderRadius: "var(--radius-sm)",
-                    color: "var(--text-main)",
-                    fontSize: "13px",
-                  }}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={handleReset}
-                style={{ padding: "8px 16px", fontSize: "13px" }}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn-primary"
-                style={{ padding: "8px 20px", fontSize: "13px", fontWeight: 700 }}
-              >
-                Submit Feedback
-              </button>
-            </div>
-          </form>
         )}
-      </div>
-    </div>
+
+        <div className="field">
+          <label className="label" htmlFor="fb-cat">
+            Area
+          </label>
+          <select id="fb-cat" className="select" value={category} onChange={(e) => setCategory(e.target.value as FeedbackCategory)}>
+            {CATEGORIES.map((cat) => (
+              <option key={cat.value} value={cat.value}>
+                {cat.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <span className="label" id="fb-rating">
+            How was it overall?
+          </span>
+          <div className="scale" role="group" aria-labelledby="fb-rating">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button key={n} type="button" aria-pressed={rating === n} onClick={() => setRating(n)}>
+                {n}
+              </button>
+            ))}
+          </div>
+          <p className="hint">1 is poor, 5 is excellent.</p>
+        </div>
+
+        <div className="field">
+          <label className="label" htmlFor="fb-t">
+            Summary
+          </label>
+          <input
+            id="fb-t"
+            type="text"
+            className="input"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Lace connected on the first try"
+            required
+            maxLength={120}
+            aria-invalid={triedSubmit && Boolean(titleError)}
+            aria-describedby="fb-t-error"
+          />
+          <FieldError id="fb-t-error">{triedSubmit ? titleError : null}</FieldError>
+        </div>
+
+        <div className="field">
+          <label className="label" htmlFor="fb-d">
+            Details
+          </label>
+          <textarea
+            id="fb-d"
+            className="textarea"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What you tried, what you expected, what happened."
+            rows={4}
+            required
+            maxLength={2000}
+            aria-invalid={triedSubmit && Boolean(descError)}
+            aria-describedby="fb-d-error fb-d-count"
+          />
+          <FieldError id="fb-d-error">{triedSubmit ? descError : null}</FieldError>
+          <p id="fb-d-count" className="hint">
+            {descLen} / 2000
+          </p>
+        </div>
+
+        <div className="field">
+          <label className="label" htmlFor="fb-h">
+            Your handle <span className="faint">(optional)</span>
+          </label>
+          <input
+            id="fb-h"
+            type="text"
+            className="input"
+            value={testerHandle}
+            onChange={(e) => setTesterHandle(e.target.value)}
+            placeholder="@handle on X or GitHub"
+          />
+        </div>
+
+        <div className="row" style={{ justifyContent: "flex-end", marginTop: 24 }}>
+          <button type="button" className="btn" onClick={handleReset}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn--primary">
+            Save feedback
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 };

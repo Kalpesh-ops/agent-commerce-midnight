@@ -458,7 +458,9 @@ export class MidnightWalletService {
       }
     }
 
-    if (this.state.status === "CONNECTING" && this.activeConnectPromise) {
+    // Any in-flight attempt (still searching for the extension, or waiting on the Lace prompt)
+    // is shared, so repeated clicks never open a second authorization request.
+    if (this.activeConnectPromise) {
       return this.activeConnectPromise;
     }
 
@@ -503,6 +505,7 @@ export class MidnightWalletService {
     // Re-verify connector availability with up to 5s exponential wait for extension injection
     let connector = this.activeConnector || this.inspectWindow();
     if (!connector) {
+      this.updateState({ status: "DETECTING", networkId, error: undefined, errorCode: undefined });
       const startTime = Date.now();
       while (Date.now() - startTime < 5000) {
         await new Promise((r) => setTimeout(r, 100));
@@ -531,6 +534,7 @@ export class MidnightWalletService {
       errorCode: undefined,
     });
 
+    let authTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       // 45-second user authorization timeout
       const connectPromise = (async () => {
@@ -545,14 +549,14 @@ export class MidnightWalletService {
       })();
 
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
+        authTimer = setTimeout(() => {
           const timeoutErr: any = new Error("Connection request timed out awaiting authorization in Lace.");
           timeoutErr.isTimeout = true;
           reject(timeoutErr);
         }, 45000);
       });
 
-      const connected = (await Promise.race([connectPromise, timeoutPromise])) as MidnightConnectedAPI;
+      const connected = (await Promise.race([connectPromise, timeoutPromise]).finally(() => clearTimeout(authTimer))) as MidnightConnectedAPI;
       if (!connected) {
         throw new Error("Lace returned an empty or invalid connected API.");
       }

@@ -1,35 +1,27 @@
 import React, { useState } from "react";
-import {
-  pactraUiService,
-  PactraProtocolState,
-} from "../services/pactraUiService";
-import {
-  Arbitrator,
-  MultiPartyDispute,
-  ArbitrationVerdict,
-} from "../../../contract/src/index.js";
+import { pactraUiService, PactraProtocolState } from "../services/pactraUiService";
+import { Arbitrator, ArbitrationVerdict } from "../../../contract/src/index.js";
+import { FieldError, Hash, LogFn, Mark, PageHead, Tag } from "./ui";
 
 interface ArbitrationPanelProps {
-  onLog: (text: string, type?: "info" | "success" | "error") => void;
+  onLog: LogFn;
 }
 
+const VERDICT_LABEL: Record<ArbitrationVerdict, string> = {
+  REFUND_CREATOR: "Refund the creator",
+  UPHOLD_SETTLEMENT: "Pay the provider",
+  SPLIT_PENALTY: "Split with penalty",
+};
+
 export const ArbitrationPanel: React.FC<ArbitrationPanelProps> = ({ onLog }) => {
-  const [pactraState, setPactraState] = useState<PactraProtocolState>(
-    pactraUiService.getState()
-  );
+  const [pactraState, setPactraState] = useState<PactraProtocolState>(pactraUiService.getState());
   const [selectedDisputeId, setSelectedDisputeId] = useState<string | null>(null);
-  const [selectedArbitratorId, setSelectedArbitratorId] = useState<string>(
-    "arb_oracle_node_01"
-  );
-  const [selectedVerdict, setSelectedVerdict] = useState<ArbitrationVerdict>(
-    "REFUND_CREATOR"
-  );
+  const [selectedArbitratorId, setSelectedArbitratorId] = useState<string>("arb_oracle_node_01");
+  const [selectedVerdict, setSelectedVerdict] = useState<ArbitrationVerdict>("REFUND_CREATOR");
   const [rationaleInput, setRationaleInput] = useState<string>(
     "Service failed cryptographic SLA verification; telemetry indicates timeout."
   );
-  const [claimantInput, setClaimantInput] = useState<"CREATOR" | "PROVIDER" | "AUTOMATED_VERIFIER">(
-    "CREATOR"
-  );
+  const [claimantInput, setClaimantInput] = useState<"CREATOR" | "PROVIDER" | "AUTOMATED_VERIFIER">("CREATOR");
   const [disputeReasonInput, setDisputeReasonInput] = useState<string>(
     "Output data hash did not match objective condition commitment."
   );
@@ -38,279 +30,317 @@ export const ArbitrationPanel: React.FC<ArbitrationPanelProps> = ({ onLog }) => 
     setPactraState(pactraUiService.getState());
   };
 
+  const activeDisputes = pactraState.arbitrationDisputes;
+  const currentDispute = activeDisputes.find((d) => d.disputeId === selectedDisputeId) || activeDisputes[0];
+
+  // Opening a case
+  const targetProcurementId = pactraState.activeProcurements[0]?.procurementId || "proc_manual_dispute_01";
+  const openCaseForTarget = activeDisputes.find(
+    (d) => d.procurementId === targetProcurementId && d.status === "PENDING_ARBITRATION"
+  );
+  const reasonError = disputeReasonInput.trim() === "" ? "Describe what went wrong." : null;
+
+  // Voting
+  const votedIds = currentDispute ? new Set(Array.from(currentDispute.votes.keys()) as string[]) : new Set<string>();
+  const unvoted = pactraState.arbitrators.filter((a) => !votedIds.has(a.arbitratorId));
+  const voter = votedIds.has(selectedArbitratorId) ? unvoted[0]?.arbitratorId ?? "" : selectedArbitratorId;
+  const rationaleError = rationaleInput.trim() === "" ? "Give a short reason for the verdict." : null;
+  const deadlocked = Boolean(currentDispute && currentDispute.status === "PENDING_ARBITRATION" && unvoted.length === 0);
+
   const handleOpenDispute = () => {
-    const latestProcurement = pactraState.activeProcurements[0];
-    const procurementId = latestProcurement?.procurementId || "proc_manual_dispute_01";
+    // One open case per purchase; a second would let the same funds be decided twice.
+    // Read live service state so a fast double click cannot pass on a stale render.
+    const alreadyOpen = pactraUiService
+      .getState()
+      .arbitrationDisputes.some((d) => d.procurementId === targetProcurementId && d.status === "PENDING_ARBITRATION");
+    if (reasonError || alreadyOpen) return;
     try {
-      onLog(`Opening formal dispute for procurement ${procurementId}...`, "info");
       const dispute = pactraUiService.openArbitrationDispute({
-        procurementId,
+        procurementId: targetProcurementId,
         claimant: claimantInput,
-        reason: disputeReasonInput,
+        reason: disputeReasonInput.trim(),
         amount: 2n,
       });
       setSelectedDisputeId(dispute.disputeId);
+      setSelectedArbitratorId(pactraState.arbitrators[0]?.arbitratorId ?? "");
       refreshState();
-      onLog(
-        `Dispute registered: ${dispute.disputeId}. Escalated to 2-of-3 threshold arbitration board.`,
-        "success"
-      );
+      onLog(`Case ${dispute.disputeId} opened for ${targetProcurementId}. Sent to the 2 of 3 board.`, "success");
     } catch (err: any) {
-      onLog(`Failed to open dispute: ${err.message}`, "error");
+      onLog(`Could not open the case: ${err.message}`, "error");
     }
   };
 
   const handleCastVote = () => {
-    if (!selectedDisputeId) {
-      onLog("Please select an active dispute to vote on.", "error");
-      return;
-    }
+    const disputeId = currentDispute?.disputeId;
+    if (!disputeId || !voter || rationaleError) return;
+    const live = pactraUiService.getState().arbitrationDisputes.find((d) => d.disputeId === disputeId);
+    if (!live || live.status !== "PENDING_ARBITRATION" || live.votes.has(voter)) return;
     try {
-      onLog(
-        `Arbitrator ${selectedArbitratorId} casting vote "${selectedVerdict}" on dispute ${selectedDisputeId}...`,
-        "info"
-      );
-      const res = pactraUiService.castArbitrationVote(
-        selectedDisputeId,
-        selectedArbitratorId,
-        selectedVerdict,
-        rationaleInput
-      );
+      const res = pactraUiService.castArbitrationVote(disputeId, voter, selectedVerdict, rationaleInput.trim());
+      const nextVoter = unvoted.find((a) => a.arbitratorId !== voter);
+      if (nextVoter) setSelectedArbitratorId(nextVoter.arbitratorId);
       refreshState();
-      if (res.resolved) {
-        onLog(
-          `Consensus reached! Dispute ${selectedDisputeId} resolved with verdict: ${res.status}.`,
-          "success"
-        );
-      } else {
-        onLog(
-          `Vote recorded! Threshold not yet reached (${res.dispute.votes.size}/${res.dispute.requiredThreshold}).`,
-          "info"
-        );
-      }
+      onLog(
+        res.resolved
+          ? `Board reached a decision on ${disputeId}: ${res.status}.`
+          : `Vote recorded. ${res.dispute.votes.size} cast, ${res.dispute.requiredThreshold} matching needed.`,
+        res.resolved ? "success" : "info"
+      );
     } catch (err: any) {
       onLog(`Vote error: ${err.message}`, "error");
     }
   };
 
-  const activeDisputes = pactraState.arbitrationDisputes;
-  const currentDispute = activeDisputes.find((d) => d.disputeId === selectedDisputeId) || activeDisputes[0];
-
   return (
-    <div className="panel-card" style={{ marginTop: "24px" }}>
-      <div className="panel-header">
-        <div>
-          <h3>⚖️ Multi-Party Threshold Arbitration Board</h3>
-          <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-            Decentralized dispute resolution for subjective tasks and SLA failures via M-of-N threshold consensus.
-          </div>
-        </div>
-      </div>
+    <div className="page">
+      <PageHead
+        num="06"
+        section="Disputes"
+        title="When the evidence is not enough, a board decides."
+        lede="Some work cannot be checked by a hash alone. A case goes to three arbitrators. Two matching votes settle it, and the escrow follows their decision."
+        aside={<Tag tone="warn">Simulation</Tag>}
+      />
 
-      {/* Arbitrator Board Seats */}
-      <div style={{ marginBottom: "20px" }}>
-        <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--cyan)", marginBottom: "10px" }}>
-          Registered Board Arbitrators (2-of-3 Threshold Consensus):
+      <section>
+        <div className="section-row">
+          <h2 className="section">The board</h2>
+          <span className="small muted">2 of 3 votes decide a case</span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "10px" }}>
-          {pactraState.arbitrators.map((arb: Arbitrator) => (
-            <div
-              key={arb.arbitratorId}
-              style={{
-                background: "rgba(10, 10, 25, 0.6)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                borderRadius: "var(--radius-sm)",
-                padding: "12px",
-              }}
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Arbitrator</th>
+                <th>Type</th>
+                <th className="hide-sm">Key commitment</th>
+                <th className="num">Reputation</th>
+                {currentDispute && <th className="num">Vote</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {pactraState.arbitrators.map((arb: Arbitrator) => (
+                <tr key={arb.arbitratorId}>
+                  <td style={{ fontWeight: 500 }}>{arb.name}</td>
+                  <td className="small">{arb.isHuman ? "Human panel" : "SLA oracle"}</td>
+                  <td className="hide-sm">
+                    <Hash value={arb.publicKeyCommitment} head={14} tail={6} />
+                  </td>
+                  <td className="num">{arb.reputationScore}/100</td>
+                  {currentDispute && (
+                    <td className="num">
+                      {votedIds.has(arb.arbitratorId) ? <Tag tone="ink">Voted</Tag> : <span className="faint small">Pending</span>}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div className="cols-2 section-block">
+        <section className="sheet" aria-labelledby="open-case">
+          <div className="sheet-head">
+            <h3 className="sub" id="open-case">
+              Open a case
+            </h3>
+          </div>
+          <form
+            className="sheet-body"
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleOpenDispute();
+            }}
+          >
+            <div className="field">
+              <label className="label" htmlFor="claimant">
+                Who is raising it
+              </label>
+              <select id="claimant" className="select" value={claimantInput} onChange={(e) => setClaimantInput(e.target.value as any)}>
+                <option value="CREATOR">Task creator</option>
+                <option value="PROVIDER">Service provider</option>
+                <option value="AUTOMATED_VERIFIER">Automated verifier</option>
+              </select>
+            </div>
+            <div className="field">
+              <label className="label" htmlFor="reason">
+                What went wrong
+              </label>
+              <textarea
+                id="reason"
+                className="textarea"
+                rows={3}
+                value={disputeReasonInput}
+                onChange={(e) => setDisputeReasonInput(e.target.value)}
+                required
+                maxLength={500}
+                aria-invalid={Boolean(reasonError)}
+                aria-describedby="reason-error"
+              />
+              <FieldError id="reason-error">{reasonError}</FieldError>
+              <p className="hint">
+                Filed against purchase <span className="hash">{targetProcurementId}</span>
+                {pactraState.activeProcurements.length === 0 && ", a sample, since you have not bought anything yet"}.
+              </p>
+            </div>
+            {openCaseForTarget && (
+              <p className="small muted" style={{ marginTop: 12 }}>
+                This purchase already has an open case. Wait for the board to decide it.
+              </p>
+            )}
+            <button
+              type="submit"
+              className="btn btn--danger btn--block"
+              style={{ marginTop: 16 }}
+              disabled={Boolean(reasonError) || Boolean(openCaseForTarget)}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-main)" }}>
-                  {arb.isHuman ? "👤 Human Panel" : "🤖 SLA Oracle"}
-                </span>
-                <span
-                  style={{
-                    fontSize: "10px",
-                    color: "var(--emerald)",
-                    background: "rgba(0, 230, 153, 0.15)",
-                    padding: "1px 6px",
-                    borderRadius: "4px",
+              Open case
+            </button>
+          </form>
+        </section>
+
+        <section className="sheet" aria-labelledby="case-title">
+          <div className="sheet-head">
+            <h3 className="sub" id="case-title">
+              {currentDispute ? (
+                <>
+                  Case <span className="hash">{currentDispute.disputeId}</span>
+                </>
+              ) : (
+                "Current case"
+              )}
+            </h3>
+            {currentDispute && (
+              <Tag tone={currentDispute.status.startsWith("RESOLVED") ? "ok" : "warn"}>
+                {currentDispute.status.replace(/_/g, " ")}
+              </Tag>
+            )}
+          </div>
+
+          {!currentDispute ? (
+            <div className="sheet-body small muted">No open cases. Open one on the left to see the board vote.</div>
+          ) : (
+            <div className="sheet-body stack">
+              {activeDisputes.length > 1 && (
+                <div className="field">
+                  <label className="label" htmlFor="case-pick">
+                    Case
+                  </label>
+                  <select
+                    id="case-pick"
+                    className="select"
+                    value={currentDispute.disputeId}
+                    onChange={(e) => setSelectedDisputeId(e.target.value)}
+                  >
+                    {activeDisputes.map((d) => (
+                      <option key={d.disputeId} value={d.disputeId}>
+                        {d.disputeId} ({d.status.replace(/_/g, " ").toLowerCase()})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <dl className="kv">
+                <dt>Raised by</dt>
+                <dd>{currentDispute.claimant.toLowerCase().replace(/_/g, " ")}</dd>
+                <dt>Reason</dt>
+                <dd className="small">{currentDispute.reason}</dd>
+                <dt>Votes</dt>
+                <dd>
+                  <span className="row" style={{ justifyContent: "flex-end", gap: 4 }}>
+                    {pactraState.arbitrators.map((a, i) => (
+                      <Mark key={a.arbitratorId} kind={i < currentDispute.votes.size ? "fill" : "empty"} />
+                    ))}
+                    <span className="small" style={{ marginLeft: 6 }}>
+                      {currentDispute.votes.size} cast, {currentDispute.requiredThreshold} matching needed
+                    </span>
+                  </span>
+                </dd>
+              </dl>
+
+              {deadlocked && (
+                <div className="notice notice--warn">
+                  <div className="notice-title">No majority</div>
+                  Every arbitrator voted differently. The case stays open until{" "}
+                  {new Date(currentDispute.timeoutTimestamp).toLocaleString()}, then refunds the creator.
+                </div>
+              )}
+
+              {currentDispute.status === "PENDING_ARBITRATION" && !deadlocked && (
+                <form
+                  noValidate
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleCastVote();
                   }}
                 >
-                  Rep: {arb.reputationScore}/100
-                </span>
-              </div>
-              <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-main)", marginBottom: "4px" }}>
-                {arb.name}
-              </div>
-              <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>
-                PK: {arb.publicKeyCommitment.slice(0, 20)}...
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+                  <div className="cols-2" style={{ gap: 12 }}>
+                    <div>
+                      <label className="label" htmlFor="arb">
+                        Vote as
+                      </label>
+                      <select id="arb" className="select" value={voter} onChange={(e) => setSelectedArbitratorId(e.target.value)}>
+                        {pactraState.arbitrators.map((a) => (
+                          <option key={a.arbitratorId} value={a.arbitratorId} disabled={votedIds.has(a.arbitratorId)}>
+                            {a.name}
+                            {votedIds.has(a.arbitratorId) ? " (voted)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label" htmlFor="verdict">
+                        Verdict
+                      </label>
+                      <select
+                        id="verdict"
+                        className="select"
+                        value={selectedVerdict}
+                        onChange={(e) => setSelectedVerdict(e.target.value as ArbitrationVerdict)}
+                      >
+                        {(Object.keys(VERDICT_LABEL) as ArbitrationVerdict[]).map((v) => (
+                          <option key={v} value={v}>
+                            {VERDICT_LABEL[v]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="field" style={{ marginTop: 12 }}>
+                    <label className="label" htmlFor="rationale">
+                      Reasoning
+                    </label>
+                    <input
+                      id="rationale"
+                      type="text"
+                      className="input"
+                      value={rationaleInput}
+                      onChange={(e) => setRationaleInput(e.target.value)}
+                      required
+                      maxLength={280}
+                      aria-invalid={Boolean(rationaleError)}
+                      aria-describedby="rationale-error"
+                    />
+                    <FieldError id="rationale-error">{rationaleError}</FieldError>
+                  </div>
+                  <button type="submit" className="btn btn--primary btn--block" style={{ marginTop: 16 }} disabled={!voter || Boolean(rationaleError)}>
+                    Cast vote
+                  </button>
+                </form>
+              )}
 
-      {/* Trigger New Dispute Section */}
-      <div
-        style={{
-          background: "rgba(255, 51, 102, 0.06)",
-          border: "1px solid rgba(255, 51, 102, 0.2)",
-          borderRadius: "var(--radius-md)",
-          padding: "16px",
-          marginBottom: "20px",
-        }}
-      >
-        <h4 style={{ fontSize: "13px", color: "var(--crimson)", marginBottom: "8px" }}>
-          Escalate Execution Failure to Arbitration
-        </h4>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: "10px", alignItems: "center" }}>
-          <div>
-            <label className="form-label" style={{ fontSize: "11px" }}>Claimant</label>
-            <select
-              className="form-input"
-              value={claimantInput}
-              onChange={(e) => setClaimantInput(e.target.value as any)}
-              style={{ fontSize: "12px" }}
-            >
-              <option value="CREATOR">Task Creator</option>
-              <option value="PROVIDER">Service Provider</option>
-              <option value="AUTOMATED_VERIFIER">Automated Verifier</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="form-label" style={{ fontSize: "11px" }}>Dispute Rationale</label>
-            <input
-              type="text"
-              className="form-input"
-              value={disputeReasonInput}
-              onChange={(e) => setDisputeReasonInput(e.target.value)}
-              style={{ fontSize: "12px" }}
-            />
-          </div>
-
-          <button
-            className="btn-action danger"
-            style={{ marginTop: "16px", padding: "8px 16px", fontSize: "12px" }}
-            onClick={handleOpenDispute}
-          >
-            Open Dispute
-          </button>
-        </div>
-      </div>
-
-      {/* Active Disputes & Voting Console */}
-      {currentDispute && (
-        <div
-          style={{
-            background: "rgba(0, 0, 0, 0.25)",
-            border: "1px solid var(--border-glow)",
-            borderRadius: "var(--radius-md)",
-            padding: "16px",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            <div>
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--cyan)" }}>
-                Active Case: {currentDispute.disputeId}
-              </span>
-              <span
-                style={{
-                  marginLeft: "10px",
-                  fontSize: "11px",
-                  padding: "2px 8px",
-                  borderRadius: "4px",
-                  fontWeight: 700,
-                  background:
-                    currentDispute.status.startsWith("RESOLVED")
-                      ? "rgba(0, 230, 153, 0.15)"
-                      : "rgba(255, 170, 0, 0.15)",
-                  color:
-                    currentDispute.status.startsWith("RESOLVED")
-                      ? "var(--emerald)"
-                      : "var(--amber)",
-                }}
-              >
-                {currentDispute.status}
-              </span>
-            </div>
-
-            <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-              Votes Cast: {currentDispute.votes.size} / {currentDispute.requiredThreshold} Required
-            </div>
-          </div>
-
-          <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "14px" }}>
-            Claimant: <strong>{currentDispute.claimant}</strong> | Reason: <em>"{currentDispute.reason}"</em>
-          </p>
-
-          {currentDispute.status === "PENDING_ARBITRATION" && (
-            <div style={{ background: "rgba(10, 10, 20, 0.5)", padding: "12px", borderRadius: "var(--radius-sm)" }}>
-              <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-main)", marginBottom: "8px" }}>
-                Cast Arbitrator Verdict:
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr auto", gap: "8px", alignItems: "center" }}>
-                <select
-                  className="form-input"
-                  value={selectedArbitratorId}
-                  onChange={(e) => setSelectedArbitratorId(e.target.value)}
-                  style={{ fontSize: "11px" }}
-                >
-                  {pactraState.arbitrators.map((a) => (
-                    <option key={a.arbitratorId} value={a.arbitratorId}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  className="form-input"
-                  value={selectedVerdict}
-                  onChange={(e) => setSelectedVerdict(e.target.value as any)}
-                  style={{ fontSize: "11px" }}
-                >
-                  <option value="REFUND_CREATOR">REFUND_CREATOR</option>
-                  <option value="UPHOLD_SETTLEMENT">UPHOLD_SETTLEMENT</option>
-                  <option value="SPLIT_PENALTY">SPLIT_PENALTY</option>
-                </select>
-
-                <input
-                  type="text"
-                  className="form-input"
-                  value={rationaleInput}
-                  onChange={(e) => setRationaleInput(e.target.value)}
-                  style={{ fontSize: "11px" }}
-                />
-
-                <button
-                  className="btn-action primary"
-                  style={{ padding: "6px 14px", fontSize: "11px" }}
-                  onClick={handleCastVote}
-                >
-                  Cast Vote
-                </button>
-              </div>
+              {currentDispute.resolutionSummary && (
+                <div className="notice notice--ok">
+                  <div className="notice-title">Decision</div>
+                  {currentDispute.resolutionSummary}
+                </div>
+              )}
             </div>
           )}
-
-          {currentDispute.resolutionSummary && (
-            <div
-              style={{
-                marginTop: "12px",
-                padding: "10px",
-                borderRadius: "var(--radius-sm)",
-                background: "rgba(0, 230, 153, 0.1)",
-                border: "1px solid var(--emerald)",
-                fontSize: "12px",
-                color: "var(--emerald)",
-              }}
-            >
-              <strong>Resolution Summary:</strong> {currentDispute.resolutionSummary}
-            </div>
-          )}
-        </div>
-      )}
+        </section>
+      </div>
     </div>
   );
 };

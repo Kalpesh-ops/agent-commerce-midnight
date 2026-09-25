@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "./components/Header";
 import { EscrowTimeline } from "./components/EscrowTimeline";
 import { TaskDetailsCard } from "./components/TaskDetailsCard";
@@ -7,7 +7,6 @@ import { AgentAuthorityPanel } from "./components/AgentAuthorityPanel";
 import { MarketplaceView } from "./components/MarketplaceView";
 import { ArbitrationPanel } from "./components/ArbitrationPanel";
 import { PrivacyModelInspector } from "./components/PrivacyModelInspector";
-import { OnboardingModal } from "./components/OnboardingModal";
 import { ComputeGuidedDemo } from "./components/ComputeGuidedDemo";
 import { SafetyBanner } from "./components/SafetyBanner";
 import { FeedbackModal } from "./components/FeedbackModal";
@@ -15,50 +14,118 @@ import { ProductMetricsView } from "./components/ProductMetricsView";
 import { FeedbackDashboard } from "./components/FeedbackDashboard";
 import { NetworkBadge } from "./components/NetworkBadge";
 import { SystemHealthPanel } from "./components/SystemHealthPanel";
+import { StartPage } from "./components/StartPage";
+import { ActivityDrawer, ActivityEntry } from "./components/ActivityDrawer";
+import { LegalPage } from "./components/LegalPage";
+import { PageHead, Tag } from "./components/ui";
 import { getEnvironmentConfig, UiEnvironmentConfig } from "./config/network";
 import { walletService, WalletState } from "./services/wallet";
 import { escrowService, EscrowContractData } from "./services/escrowService";
 import { contractClient, TxLifecycleEvent } from "./services/contractClient";
 import { MidnightNetworkId } from "./types/midnight";
 
+export type RouteId =
+  | "start"
+  | "walkthrough"
+  | "escrow"
+  | "agent"
+  | "services"
+  | "disputes"
+  | "privacy"
+  | "system"
+  | "terms"
+  | "privacy-policy";
+
+export const NAV: { group: string; items: { id: RouteId; num: string; label: string }[] }[] = [
+  {
+    group: "Begin",
+    items: [
+      { id: "start", num: "01", label: "Start here" },
+      { id: "walkthrough", num: "02", label: "Walkthrough" },
+    ],
+  },
+  {
+    group: "Operate",
+    items: [
+      { id: "escrow", num: "03", label: "Escrow" },
+      { id: "agent", num: "04", label: "Agent authority" },
+      { id: "services", num: "05", label: "Services" },
+      { id: "disputes", num: "06", label: "Disputes" },
+    ],
+  },
+  {
+    group: "Inspect",
+    items: [
+      { id: "privacy", num: "07", label: "Privacy model" },
+      { id: "system", num: "08", label: "System" },
+    ],
+  },
+];
+
+const ROUTE_IDS = new Set<string>([...NAV.flatMap((g) => g.items.map((i) => i.id)), "terms", "privacy-policy"]);
+
+const readRoute = (): RouteId => {
+  const id = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+  return (ROUTE_IDS.has(id) ? id : "start") as RouteId;
+};
+
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<
-    "protocol" | "compute" | "marketplace" | "arbitration" | "privacy" | "metrics" | "feedback_dev" | "health"
-  >("protocol");
+  const [route, setRoute] = useState<RouteId>(readRoute);
+  const [systemTab, setSystemTab] = useState<"health" | "metrics" | "feedback">("health");
   const [currentEnv, setCurrentEnv] = useState<UiEnvironmentConfig>(getEnvironmentConfig("PREPROD"));
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState<boolean>(false);
+  const [isActivityOpen, setIsActivityOpen] = useState<boolean>(false);
   const [wallet, setWallet] = useState<WalletState>(walletService.getState());
   const [escrowState, setEscrowState] = useState<EscrowContractData>(escrowService.getState());
   const [txLifecycle, setTxLifecycle] = useState<TxLifecycleEvent | null>(null);
   const [isIndexerLive, setIsIndexerLive] = useState<boolean>(false);
+  const [isIndexerChecked, setIsIndexerChecked] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [connectAttempted, setConnectAttempted] = useState<boolean>(false);
+  const connectInFlight = useRef(false);
 
-  const [logs, setLogs] = useState<Array<{ text: string; type: "info" | "success" | "error" }>>([
-    { text: "Pactra Agent Commerce & Escrow Protocol initialized.", type: "info" },
-    { text: "Target Network: Midnight Preprod Testnet.", type: "info" },
+  const [logs, setLogs] = useState<ActivityEntry[]>(() => [
+    { time: new Date().toLocaleTimeString(), text: "Pactra console ready. Target network: Midnight Preprod.", type: "info" },
   ]);
 
   const addLog = useCallback((text: string, type: "info" | "success" | "error" = "info") => {
-    setLogs((prev) => [
-      { text: `[${new Date().toLocaleTimeString()}] ${text}`, type },
-      ...prev.slice(0, 30),
-    ]);
+    setLogs((prev) => [{ time: new Date().toLocaleTimeString(), text, type }, ...prev.slice(0, 49)]);
   }, []);
+
+  const navigate = useCallback((id: RouteId) => {
+    window.location.hash = `/${id}`;
+  }, []);
+
+  // 0. Hash router
+  useEffect(() => {
+    const onHash = () => {
+      setRoute(readRoute());
+      window.scrollTo(0, 0);
+    };
+
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  // Keep the active section visible in the horizontal nav on small screens
+  useEffect(() => {
+    document.querySelector('.nav-link[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [route]);
 
   // 1. Subscribe to deterministic Wallet Service state machine
   useEffect(() => {
     const unsubscribe = walletService.subscribe((updatedState) => {
       setWallet(updatedState);
       if (updatedState.status === "WALLET_DETECTED") {
-        addLog(`Midnight Lace connector detected (${updatedState.detectedWalletName || "Lace"}). Ready to connect.`, "info");
+        addLog(`${updatedState.detectedWalletName || "Lace"} wallet detected. Ready to connect.`, "info");
       } else if (updatedState.status === "CONNECTED") {
-        addLog(`Lace wallet verified and connected on ${updatedState.activeNetwork || updatedState.networkId}.`, "success");
+        addLog(`Lace connected on ${updatedState.activeNetwork || updatedState.networkId}.`, "success");
       } else if (updatedState.status === "REJECTED") {
-        addLog("Wallet connection rejected by user in Lace popup.", "error");
+        addLog("Connection request was declined in Lace.", "error");
       } else if (updatedState.status === "TIMEOUT") {
-        addLog("Wallet authorization request timed out.", "error");
+        addLog("Lace did not answer in time.", "error");
       } else if (updatedState.status === "FAILED" && updatedState.error) {
-        addLog(`Wallet connection error: ${updatedState.error}`, "error");
+        addLog(`Wallet error: ${updatedState.error}`, "error");
       }
     });
 
@@ -71,26 +138,22 @@ export const App: React.FC = () => {
   useEffect(() => {
     contractClient.setLifecycleListener((event) => {
       setTxLifecycle(event);
-      if (event.status === "PENDING_USER_SIGNATURE") {
-        addLog(event.message, "info");
-      } else if (event.status === "SUBMITTED") {
-        addLog(event.message, "info");
-      } else if (event.status === "CONFIRMING") {
-        addLog(event.message, "info");
-      } else if (event.status === "CONFIRMED") {
-        addLog(`Transaction confirmed on-chain! Tx: ${event.txHash}`, "success");
+      if (event.status === "CONFIRMED") {
+        addLog(`Transaction confirmed. Tx ${event.txHash}`, "success");
       } else if (event.status === "FAILED") {
         addLog(`Transaction failed: ${event.error || event.message}`, "error");
+      } else if (["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(event.status)) {
+        addLog(event.message, "info");
       }
     });
   }, [addLog]);
 
-  // 3. Preprod Indexer Health Verification with Visibility-Aware Debouncing
+  // 3. Preprod indexer health, paused while the tab is hidden
   useEffect(() => {
     let isMounted = true;
     const verifyIndexer = async () => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-        return; // Suspend background HTTP requests when tab is inactive
+        return;
       }
       try {
         const res = await fetch("https://indexer.preprod.midnight.network/api/v4/graphql", {
@@ -99,11 +162,11 @@ export const App: React.FC = () => {
           body: JSON.stringify({ query: "{ currentEpochInfo { epochNo } }" }),
         });
         const json = await res.json();
-        if (json?.data?.currentEpochInfo?.epochNo && isMounted) {
-          setIsIndexerLive(true);
-        }
+        if (isMounted) setIsIndexerLive(Boolean(json?.data?.currentEpochInfo?.epochNo));
       } catch {
         if (isMounted) setIsIndexerLive(false);
+      } finally {
+        if (isMounted) setIsIndexerChecked(true);
       }
     };
 
@@ -128,40 +191,51 @@ export const App: React.FC = () => {
   useEffect(() => {
     const savedAddress = localStorage.getItem("midnight_task_escrow_contract_address");
     if (savedAddress) {
-      addLog(`Found persisted contract address: ${savedAddress.slice(0, 16)}...`, "info");
+      addLog(`Found saved contract ${savedAddress.slice(0, 16)}...`, "info");
+      setIsSyncing(true);
       escrowService
         .syncWithIndexer(savedAddress)
         .then((reconstructed) => {
           if (reconstructed) {
             setEscrowState(reconstructed);
             addLog(
-              `Reconstructed TaskEscrow state from Midnight Preprod Indexer: State=${reconstructed.taskState}, Escrowed=${reconstructed.escrowedAmount} DUST.`,
+              `Restored escrow from the Preprod indexer: ${reconstructed.taskState}, ${reconstructed.escrowedAmount} DUST held.`,
               "success"
             );
           } else {
-            addLog(
-              `Contract ${savedAddress.slice(0, 16)}... not yet indexed or pending block confirmation.`,
-              "info"
-            );
+            addLog(`Contract ${savedAddress.slice(0, 16)}... is not indexed yet.`, "info");
           }
         })
         .catch((err) => {
           addLog(`Indexer query error: ${err.message}`, "error");
-        });
+        })
+        .finally(() => setIsSyncing(false));
+    } else {
+      // No contract yet: run the escrow against the local simulation until one is deployed or attached.
+      escrowService.setMode("demo");
+      setEscrowState(escrowService.getState());
     }
   }, [addLog]);
 
   const handleConnectWallet = async () => {
-    if (wallet.status === "CONNECTING") {
+    // Header, Start page and the error banner all call this; only the first click in flight counts.
+    if (connectInFlight.current) {
       return;
     }
-    addLog(`Initiating handshake with Midnight Lace on ${wallet.networkId}...`, "info");
+    connectInFlight.current = true;
+    try {
+      await connectWallet();
+    } finally {
+      connectInFlight.current = false;
+    }
+  };
+
+  const connectWallet = async () => {
+    setConnectAttempted(true);
+    addLog(`Asking Lace to connect on ${wallet.networkId}...`, "info");
     const res = await walletService.connect(wallet.networkId);
     if (res.status === "CONNECTED") {
-      addLog(
-        `Wallet connected successfully! Shielded Coin PK: ${res.coinPublicKey?.slice(0, 16)}...`,
-        "success"
-      );
+      addLog(`Wallet connected. Shielded coin key ${res.coinPublicKey?.slice(0, 16)}...`, "success");
       const currentAddr = contractClient.getActiveContractAddress() || escrowState.contractAddress;
       if (currentAddr) {
         escrowService.setMode("live");
@@ -171,39 +245,37 @@ export const App: React.FC = () => {
   };
 
   const handleDisconnectWallet = () => {
+    if (!window.confirm("Disconnect Lace from Pactra? You will need to approve the connection again next time.")) return;
     walletService.disconnect();
     addLog("Lace wallet disconnected.", "info");
   };
 
   const handleNetworkChange = (net: MidnightNetworkId) => {
+    if (connectInFlight.current || net === wallet.networkId) return;
+    if (wallet.isConnected && !window.confirm(`Switching to ${net} disconnects Lace. Continue?`)) return;
     setWallet((prev) => ({ ...prev, networkId: net }));
-    addLog(`Switched network target to ${net}.`, "info");
+    addLog(`Target network set to ${net}.`, "info");
     if (wallet.isConnected) {
       walletService.disconnect();
-      addLog("Disconnected wallet due to target network change. Please reconnect on the new network.", "info");
+      addLog("Wallet disconnected because the target network changed. Reconnect on the new network.", "info");
     }
   };
 
   const handleDeployContract = async () => {
     try {
       if (!wallet.isConnected) {
-        addLog("Connecting Midnight Lace wallet prior to on-chain deployment...", "info");
+        addLog("Connecting Lace before deployment...", "info");
         const connRes = await walletService.connect(wallet.networkId);
         if (connRes.status !== "CONNECTED") {
-          throw new Error("Lace wallet connection is required to deploy on-chain. Please connect Lace wallet.");
+          throw new Error("Connect your Lace wallet to deploy on-chain.");
         }
       }
-      addLog("Preparing TaskEscrow deployment on Midnight Preprod via Lace wallet...", "info");
-      addLog("Manual Action Required: Open your Midnight Lace extension window and approve the deployment transaction fee.", "info");
+      addLog("Preparing TaskEscrow deployment on Preprod. Approve the fee in Lace.", "info");
       const deployedAddress = await escrowService.deployOnPreprod((event) => {
         setTxLifecycle(event);
       });
-      const newState = escrowService.getState();
-      setEscrowState(newState);
-      addLog(
-        `Contract deployed on Preprod! Address: ${deployedAddress}`,
-        "success"
-      );
+      setEscrowState(escrowService.getState());
+      addLog(`Contract deployed at ${deployedAddress}`, "success");
     } catch (err: any) {
       addLog(`Deployment failed: ${err.message}`, "error");
       throw err;
@@ -212,131 +284,110 @@ export const App: React.FC = () => {
 
   const handleJoinContract = async (address: string) => {
     try {
-      addLog(`Joining deployed TaskEscrow contract: ${address}...`, "info");
+      addLog(`Attaching to contract ${address}...`, "info");
+      setIsSyncing(true);
       const joinedState = await escrowService.joinDeployed(address);
       if (joinedState) {
         setEscrowState(joinedState);
-        addLog(`Joined contract and synchronized state from indexer.`, "success");
+        addLog("Attached and synced from the indexer.", "success");
       } else {
-        addLog(`Joined contract, but indexer returned no ledger state yet.`, "info");
+        addLog("Attached. The indexer has no ledger state for it yet.", "info");
       }
     } catch (err: any) {
-      addLog(`Join contract error: ${err.message}`, "error");
+      addLog(`Attach failed: ${err.message}`, "error");
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   const handleRefreshIndexer = async () => {
     const currentAddr = contractClient.getActiveContractAddress() || escrowState.contractAddress;
     if (!currentAddr) {
-      addLog("No contract address available to query indexer.", "info");
+      addLog("No contract address to query.", "info");
       return;
     }
+    setIsSyncing(true);
     try {
-      addLog(`Querying Midnight Preprod GraphQL indexer for ${currentAddr.slice(0, 16)}...`, "info");
+      addLog(`Querying the Preprod indexer for ${currentAddr.slice(0, 16)}...`, "info");
       const updated = await escrowService.syncWithIndexer(currentAddr);
       if (updated) {
         setEscrowState(updated);
-        addLog(
-          `Indexer sync complete: State=${updated.taskState}, Escrowed=${updated.escrowedAmount} DUST.`,
-          "success"
-        );
+        addLog(`Synced: ${updated.taskState}, ${updated.escrowedAmount} DUST held.`, "success");
       } else {
-        addLog("No ledger state returned by indexer for this contract.", "info");
+        addLog("The indexer returned no ledger state for this contract.", "info");
       }
     } catch (err: any) {
       addLog(`Indexer sync failed: ${err.message}`, "error");
+    } finally {
+      setIsSyncing(false);
     }
   };
 
-  const handleCreateTask = async (budget: number) => {
+  const runCircuit = async (
+    label: string,
+    exec: () => Promise<EscrowContractData>,
+    success: (s: EscrowContractData) => string
+  ) => {
     try {
-      addLog(`Executing createTask circuit (Budget: ${budget} DUST)...`, "info");
-      const newState = await escrowService.createTask(
-        {
-          taskId: `0xtask_${Date.now().toString(16).padStart(16, "0")}`,
-          agentCommitment: "0xagent_pk_88a3f5912e7bc401000000000000000000000000000000000000000000000000",
-          maxBudget: budget,
-          conditionHash: "0xcond_sha256_dataset_clean_verified_spec_00000000000000000000000000000000",
-          creatorSecret: "creator_entropy_seed_secret",
-        },
-        (event) => setTxLifecycle(event)
-      );
+      addLog(`Running ${label}...`, "info");
+      const newState = await exec();
       setEscrowState(newState);
-      addLog(`Task created! Task ID: ${newState.taskId}`, "success");
+      addLog(success(newState), "success");
     } catch (err: any) {
-      addLog(`createTask error: ${err.message}`, "error");
+      addLog(`${label} failed: ${err.message}`, "error");
       throw err;
     }
   };
 
-  const handleFundTask = async (amount: number) => {
-    try {
-      addLog(`Executing fundTask circuit deposit: ${amount} DUST/tNIGHT...`, "info");
-      const newState = await escrowService.fundTask(amount, (event) => setTxLifecycle(event));
-      setEscrowState(newState);
-      addLog(`Task funded! New escrow balance: ${newState.escrowedAmount} DUST.`, "success");
-    } catch (err: any) {
-      addLog(`fundTask error: ${err.message}`, "error");
-      throw err;
-    }
-  };
+  const onTx = (event: TxLifecycleEvent) => setTxLifecycle(event);
 
-  const handleAcceptTask = async () => {
-    try {
-      addLog("Agent proving identity commitment with local witness via acceptTask circuit...", "info");
-      const newState = await escrowService.acceptTask((event) => setTxLifecycle(event));
-      setEscrowState(newState);
-      addLog("Task accepted! State changed to ACTIVE.", "success");
-    } catch (err: any) {
-      addLog(`acceptTask error: ${err.message}`, "error");
-      throw err;
-    }
-  };
+  const handleCreateTask = (budget: number) =>
+    runCircuit(
+      `createTask with a ${budget} DUST ceiling`,
+      () =>
+        escrowService.createTask(
+          {
+            taskId: `0xtask_${Date.now().toString(16).padStart(16, "0")}`,
+            agentCommitment: "0xagent_pk_88a3f5912e7bc401000000000000000000000000000000000000000000000000",
+            maxBudget: budget,
+            conditionHash: "0xcond_sha256_dataset_clean_verified_spec_00000000000000000000000000000000",
+            creatorSecret: "creator_entropy_seed_secret",
+          },
+          onTx
+        ),
+      (s) => `Task created: ${s.taskId}`
+    );
 
-  const handleSubmitCompletion = async (evidenceHash: string) => {
-    try {
-      addLog(`Agent submitting completion evidence hash via submitCompletion circuit: ${evidenceHash.slice(0, 20)}...`, "info");
-      const newState = await escrowService.submitCompletion(evidenceHash, (event) => setTxLifecycle(event));
-      setEscrowState(newState);
-      addLog("Evidence submitted! State changed to COMPLETION_PENDING.", "success");
-    } catch (err: any) {
-      addLog(`submitCompletion error: ${err.message}`, "error");
-      throw err;
-    }
-  };
+  const handleFundTask = (amount: number) =>
+    runCircuit(`fundTask for ${amount} DUST`, () => escrowService.fundTask(amount, onTx), (s) => `Escrow funded. Balance ${s.escrowedAmount} DUST.`);
 
-  const handleSettleTask = async (payoutAmount: number) => {
-    try {
-      addLog(`Executing settleTask circuit: releasing ${payoutAmount} DUST payout to agent...`, "info");
-      const newState = await escrowService.settleTask(payoutAmount, (event) => setTxLifecycle(event));
-      setEscrowState(newState);
-      addLog("Task settled! Payout released to agent. State changed to COMPLETED.", "success");
-    } catch (err: any) {
-      addLog(`settleTask error: ${err.message}`, "error");
-      throw err;
-    }
-  };
+  const handleAcceptTask = () =>
+    runCircuit("acceptTask (agent proves its commitment)", () => escrowService.acceptTask(onTx), () => "Agent accepted. Task is active.");
 
-  const handleRefundTask = async () => {
-    try {
-      addLog("Executing refundTask circuit: reclaiming escrowed funds...", "info");
-      const newState = await escrowService.refundTask((event) => setTxLifecycle(event));
-      setEscrowState(newState);
-      addLog("Task refunded! Escrowed funds returned to creator.", "success");
-    } catch (err: any) {
-      addLog(`refundTask error: ${err.message}`, "error");
-      throw err;
-    }
-  };
+  const handleSubmitCompletion = (evidenceHash: string) =>
+    runCircuit(
+      "submitCompletion",
+      () => escrowService.submitCompletion(evidenceHash, onTx),
+      () => "Evidence submitted. Waiting for the creator to settle."
+    );
+
+  const handleSettleTask = (payoutAmount: number) =>
+    runCircuit(
+      `settleTask paying ${payoutAmount} DUST`,
+      () => escrowService.settleTask(payoutAmount, onTx),
+      () => "Settled. Payout released to the agent."
+    );
+
+  const handleRefundTask = () =>
+    runCircuit("refundTask", () => escrowService.refundTask(onTx), () => "Refunded. Escrowed funds returned to the creator.");
 
   const handleResetDemo = () => {
-    const newState = escrowService.resetDemo();
-    setEscrowState(newState);
+    setEscrowState(escrowService.resetDemo());
     setTxLifecycle(null);
-    addLog("Demo state reset to UNINITIALIZED.", "info");
+    addLog("Simulation reset.", "info");
   };
 
-  // Strict LIVE Mode Invariant: requires authenticated Lace + Preprod network + real contract + live indexer
+  // LIVE requires authenticated Lace + Preprod network + real contract + live indexer
   const isLive =
     wallet.status === "CONNECTED" &&
     wallet.networkId === "preprod" &&
@@ -344,8 +395,134 @@ export const App: React.FC = () => {
     escrowService.getMode() === "live" &&
     isIndexerLive;
 
+  const isTxBusy = Boolean(txLifecycle && ["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(txLifecycle.status));
+
+  const renderPage = () => {
+    switch (route) {
+      case "start":
+        return (
+          <StartPage
+            wallet={wallet}
+            escrowState={escrowState}
+            isLive={isLive}
+            isIndexerLive={isIndexerLive}
+            isIndexerChecked={isIndexerChecked}
+            onConnect={handleConnectWallet}
+          />
+        );
+      case "walkthrough":
+        return <ComputeGuidedDemo onLog={addLog} onNavigateToEscrow={() => navigate("escrow")} />;
+      case "escrow":
+        return (
+          <div className="page">
+            <PageHead
+              num="03"
+              section="Escrow"
+              title="One task, one escrow, six circuits."
+              lede="Create a task with a spending ceiling, fund it, let the agent accept and deliver, then settle or refund. Switch between the creator and agent roles on the right."
+              aside={
+                isLive ? (
+                  <Tag tone="ok">Live on Preprod</Tag>
+                ) : escrowState.contractAddress ? (
+                  <Tag tone="warn">Contract attached, not live</Tag>
+                ) : (
+                  <Tag tone="warn">Simulation</Tag>
+                )
+              }
+            />
+            <EscrowTimeline taskState={escrowState.taskState} settlementState={escrowState.settlementState} />
+            <div className="cols-split" style={{ marginTop: 24 }}>
+              <TaskDetailsCard
+                data={escrowState}
+                isSyncing={isSyncing}
+                onRefreshFromIndexer={escrowState.contractAddress ? handleRefreshIndexer : undefined}
+              />
+              <RoleActionPanel
+                data={escrowState}
+                isLiveMode={isLive}
+                txLifecycle={txLifecycle}
+                onDeployContract={handleDeployContract}
+                onJoinContract={handleJoinContract}
+                onCreateTask={handleCreateTask}
+                onFundTask={handleFundTask}
+                onAcceptTask={handleAcceptTask}
+                onSubmitCompletion={handleSubmitCompletion}
+                onSettleTask={handleSettleTask}
+                onRefundTask={handleRefundTask}
+                onResetDemo={handleResetDemo}
+              />
+            </div>
+          </div>
+        );
+      case "agent":
+        return (
+          <AgentAuthorityPanel
+            onLog={addLog}
+            onMidnightSettle={escrowState.taskState === "COMPLETION_PENDING" ? () => handleSettleTask(2) : undefined}
+            isMidnightBusy={isTxBusy}
+          />
+        );
+      case "services":
+        return <MarketplaceView onLog={addLog} />;
+      case "disputes":
+        return <ArbitrationPanel onLog={addLog} />;
+      case "privacy":
+        return <PrivacyModelInspector />;
+      case "system":
+        return (
+          <div className="page">
+            <PageHead
+              num="08"
+              section="System"
+              title="What is running, and what is simulated."
+              lede="Network health, honest usage counts, and the tester feedback log."
+              aside={
+                <NetworkBadge
+                  currentEnv={currentEnv}
+                  detectedWalletNetwork={wallet.activeNetwork || wallet.networkId}
+                  onSwitchEnv={(envId) => {
+                    setCurrentEnv(getEnvironmentConfig(envId));
+                    addLog(`Environment set to ${envId}.`, "info");
+                  }}
+                />
+              }
+            />
+            <div className="filters" role="tablist" aria-label="System views">
+              {(
+                [
+                  ["health", "Health"],
+                  ["metrics", "Metrics"],
+                  ["feedback", "Feedback log"],
+                ] as const
+              ).map(([id, label]) => (
+                <button key={id} role="tab" aria-selected={systemTab === id} onClick={() => setSystemTab(id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {systemTab === "health" && (
+              <SystemHealthPanel
+                currentEnv={currentEnv}
+                isWalletConnected={wallet.status === "CONNECTED"}
+                walletNetwork={wallet.activeNetwork || wallet.networkId}
+                activeContractAddress={escrowState.contractAddress}
+              />
+            )}
+            {systemTab === "metrics" && <ProductMetricsView escrowState={escrowState} isIndexerLive={isIndexerLive} />}
+            {systemTab === "feedback" && <FeedbackDashboard onLog={addLog} onOpenFeedback={() => setIsFeedbackOpen(true)} />}
+          </div>
+        );
+      case "terms":
+      case "privacy-policy":
+        return <LegalPage kind={route} />;
+    }
+  };
+
   return (
-    <div className="app-container">
+    <div className="shell">
+      <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>
+        Skip to content
+      </a>
       <Header
         wallet={wallet}
         isLiveMode={isLive}
@@ -353,285 +530,87 @@ export const App: React.FC = () => {
         onConnect={handleConnectWallet}
         onDisconnect={handleDisconnectWallet}
         onNetworkChange={handleNetworkChange}
-        onOpenGuide={() => setIsOnboardingOpen(true)}
-        onOpenFeedback={() => setIsFeedbackOpen(true)}
-        onModeToggle={(mode) => {
-          escrowService.setMode(mode);
-          setEscrowState(escrowService.getState());
-          addLog(`Switched operating mode to ${mode.toUpperCase()}.`, "info");
-        }}
-        onContractAddressChange={(addr) => {
-          handleJoinContract(addr);
-        }}
+        activityCount={logs.length}
+        onToggleActivity={() => setIsActivityOpen((v) => !v)}
       />
 
-      <SafetyBanner />
-
-      <FeedbackModal
-        isOpen={isFeedbackOpen}
-        onClose={() => setIsFeedbackOpen(false)}
-        onLog={addLog}
-      />
-
-      <OnboardingModal
-        isOpen={isOnboardingOpen}
-        onClose={() => {
-          setIsOnboardingOpen(false);
-          try {
-            localStorage.setItem("pactra_onboarding_shown", "true");
-          } catch {
-            // ignore localStorage errors
-          }
-        }}
-        onStartGuide={() => {
-          setIsOnboardingOpen(false);
-          setActiveTab("compute");
-          try {
-            localStorage.setItem("pactra_onboarding_shown", "true");
-          } catch {
-            // ignore localStorage errors
-          }
-        }}
-      />
-
-      {/* Wallet Error Diagnostic Banner */}
-      {wallet.error && wallet.status !== "CONNECTED" && (
-        <div
-          id="wallet-diagnostic-banner"
-          style={{
-            marginTop: "16px",
-            padding: "12px 16px",
-            background: "rgba(255, 51, 102, 0.12)",
-            border: "1px solid var(--crimson)",
-            borderRadius: "var(--radius-md)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "12px",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "18px" }}>⚠️</span>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: "13px", color: "var(--crimson)" }}>
-                Wallet Connection Notice ({wallet.errorCode || wallet.status})
-              </div>
-              <div style={{ fontSize: "12px", color: "var(--text-main)", marginTop: "2px" }}>
-                {wallet.error}
-              </div>
-            </div>
-          </div>
-          <button
-            className="btn-secondary"
-            style={{ padding: "6px 14px", fontSize: "12px", whiteSpace: "nowrap" }}
-            onClick={handleConnectWallet}
-          >
-            🔄 Retry Connect
-          </button>
-        </div>
-      )}
-
-      <section className="vision-banner">
-        <h2>Pactra: Autonomous Agent Commerce & Escrow Protocol</h2>
-        <p style={{ fontSize: "15px", fontWeight: 600, color: "var(--cyan)", margin: "6px 0 10px 0" }}>
-          "Give an agent a goal and bounded economic authority — not your wallet."
-        </p>
-        <p>
-          A privacy-preserving economic operating system for autonomous AI agents on Midnight.
-          AI agents privately plan, procure, and settle resources under cryptographically anchored policies without unrestricted treasury custody.
-        </p>
-        <div style={{ display: "flex", gap: "12px", alignItems: "center", marginTop: "12px", flexWrap: "wrap" }}>
-          <div className="security-badge" style={{ margin: 0 }}>
-            <span>🔒</span> Core Security Invariant: The agent NEVER receives unrestricted access to the user treasury.
-          </div>
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "4px 10px",
-              background: isIndexerLive ? "rgba(0, 230, 153, 0.1)" : "rgba(255, 170, 0, 0.1)",
-              border: `1px solid ${isIndexerLive ? "rgba(0, 230, 153, 0.3)" : "rgba(255, 170, 0, 0.3)"}`,
-              borderRadius: "var(--radius-full)",
-              fontSize: "11px",
-              fontWeight: 700,
-              color: isIndexerLive ? "var(--emerald)" : "var(--amber)",
-            }}
-            title={isIndexerLive ? "Midnight Preprod Indexer is reachable and reporting epochs" : "Indexer connectivity pending or slow"}
-          >
-            <span style={{ fontSize: "10px" }}>{isIndexerLive ? "●" : "○"}</span>
-            <span>Preprod Indexer: {isIndexerLive ? "Online (Epoch Active)" : "Querying Indexer..."}</span>
-          </div>
-          <NetworkBadge
-            currentEnv={currentEnv}
-            detectedWalletNetwork={wallet.activeNetwork || wallet.networkId}
-            onSwitchEnv={(envId) => {
-              setCurrentEnv(getEnvironmentConfig(envId));
-              addLog(`Switched network target to ${envId}`, "info");
-            }}
-          />
-        </div>
-      </section>
-
-      {/* Production Navigation Tabs */}
-      <div
-        style={{
-          display: "flex",
-          gap: "10px",
-          borderBottom: "1px solid var(--border-glow)",
-          paddingBottom: "12px",
-          marginBottom: "20px",
-          flexWrap: "wrap",
-        }}
-      >
-        <button
-          className={`tab-btn ${activeTab === "protocol" ? "active" : ""}`}
-          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
-          onClick={() => setActiveTab("protocol")}
-        >
-          🏛️ Task & Protocol
-        </button>
-        <button
-          className={`tab-btn ${activeTab === "compute" ? "active" : ""}`}
-          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
-          onClick={() => setActiveTab("compute")}
-        >
-          ⚡ Guided Compute MVP
-        </button>
-        <button
-          className={`tab-btn ${activeTab === "marketplace" ? "active" : ""}`}
-          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
-          onClick={() => setActiveTab("marketplace")}
-        >
-          🏪 Multi-Service Marketplace
-        </button>
-        <button
-          className={`tab-btn ${activeTab === "arbitration" ? "active" : ""}`}
-          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
-          onClick={() => setActiveTab("arbitration")}
-        >
-          ⚖️ Threshold Arbitration
-        </button>
-        <button
-          className={`tab-btn ${activeTab === "privacy" ? "active" : ""}`}
-          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
-          onClick={() => setActiveTab("privacy")}
-        >
-          🛡️ Privacy & State Boundaries
-        </button>
-        <button
-          className={`tab-btn ${activeTab === "health" ? "active" : ""}`}
-          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
-          onClick={() => setActiveTab("health")}
-        >
-          🩺 System Health & Network
-        </button>
-        <button
-          className={`tab-btn ${activeTab === "metrics" ? "active" : ""}`}
-          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
-          onClick={() => setActiveTab("metrics")}
-        >
-          📊 Truthful Metrics
-        </button>
-        <button
-          className={`tab-btn ${activeTab === "feedback_dev" ? "active" : ""}`}
-          style={{ padding: "8px 18px", fontSize: "13px", fontWeight: 700 }}
-          onClick={() => setActiveTab("feedback_dev")}
-        >
-          🛠️ Tester Feedback Log
-        </button>
-      </div>
-
-      {activeTab === "protocol" && (
-        <>
-          <EscrowTimeline
-            taskState={escrowState.taskState}
-            settlementState={escrowState.settlementState}
-          />
-
-          <div className="dashboard-grid">
-            <TaskDetailsCard
-              data={escrowState}
-              onRefreshFromIndexer={escrowState.contractAddress ? handleRefreshIndexer : undefined}
-            />
-            <RoleActionPanel
-              data={escrowState}
-              isLiveMode={isLive}
-              txLifecycle={txLifecycle}
-              onDeployContract={handleDeployContract}
-              onJoinContract={handleJoinContract}
-              onCreateTask={handleCreateTask}
-              onFundTask={handleFundTask}
-              onAcceptTask={handleAcceptTask}
-              onSubmitCompletion={handleSubmitCompletion}
-              onSettleTask={handleSettleTask}
-              onRefundTask={handleRefundTask}
-              onResetDemo={handleResetDemo}
-            />
-          </div>
-
-          <AgentAuthorityPanel
-            onLog={addLog}
-            onMidnightSettle={escrowState.taskState === "COMPLETION_PENDING" ? () => handleSettleTask(2) : undefined}
-            isMidnightBusy={Boolean(txLifecycle && ["PENDING_USER_SIGNATURE", "SUBMITTED", "CONFIRMING"].includes(txLifecycle.status))}
-          />
-        </>
-      )}
-
-      {activeTab === "compute" && (
-        <ComputeGuidedDemo
-          onLog={addLog}
-          onNavigateToEscrow={() => setActiveTab("protocol")}
-        />
-      )}
-
-      {activeTab === "marketplace" && (
-        <MarketplaceView
-          onLog={addLog}
-          onServiceProcured={() => {
-            setActiveTab("protocol");
-          }}
-        />
-      )}
-
-      {activeTab === "arbitration" && (
-        <ArbitrationPanel onLog={addLog} />
-      )}
-
-      {activeTab === "privacy" && (
-        <PrivacyModelInspector />
-      )}
-
-      {activeTab === "health" && (
-        <SystemHealthPanel
-          currentEnv={currentEnv}
-          isWalletConnected={wallet.status === "CONNECTED"}
-          walletNetwork={wallet.activeNetwork || wallet.networkId}
-          activeContractAddress={escrowState.contractAddress}
-        />
-      )}
-
-      {activeTab === "metrics" && (
-        <ProductMetricsView
-          escrowState={escrowState}
-          isIndexerLive={isIndexerLive}
-        />
-      )}
-
-      {activeTab === "feedback_dev" && (
-        <FeedbackDashboard onLog={addLog} />
-      )}
-
-      <div className="tx-log">
-        <div style={{ color: "var(--text-muted)", marginBottom: "4px", fontSize: "11px", fontWeight: 700 }}>
-          PROTOCOL ACTIVITY & ZERO-KNOWLEDGE PROOF LOG
-        </div>
-        {logs.map((log, idx) => (
-          <div key={idx} className={`tx-log-item ${log.type}`}>
-            {log.text}
+      <nav className="nav" aria-label="Sections">
+        {NAV.map((g) => (
+          <div className="nav-group" key={g.group}>
+            <div className="nav-group-label">{g.group}</div>
+            {g.items.map((item) => (
+              <a
+                key={item.id}
+                href={`#/${item.id}`}
+                className="nav-link"
+                aria-current={route === item.id ? "page" : undefined}
+              >
+                <span className="nav-num">{item.num}</span>
+                <span>{item.label}</span>
+              </a>
+            ))}
           </div>
         ))}
-      </div>
+      </nav>
+
+      <main className="main" id="main" tabIndex={-1}>
+        <SafetyBanner />
+
+        {/* A missing extension is expected for first-time visitors; only surface it once they try to connect. */}
+        {wallet.error && wallet.status !== "CONNECTED" && (wallet.errorCode !== "WALLET_UNAVAILABLE" || connectAttempted) && (
+          <div id="wallet-diagnostic-banner" className="notice notice--bad" style={{ marginBottom: 24 }}>
+            <div className="row-between">
+              <div>
+                <div className="notice-title">Wallet could not connect ({wallet.errorCode || wallet.status})</div>
+                <div>
+                  {wallet.error}
+                  {wallet.errorCode === "WALLET_UNAVAILABLE" && (
+                    <>
+                      {" "}
+                      Get it at{" "}
+                      <a href="https://www.lace.io/" target="_blank" rel="noreferrer">
+                        lace.io
+                      </a>
+                      . You can still use the walkthrough and simulation without it.
+                    </>
+                  )}
+                </div>
+              </div>
+              <button
+                className="btn btn--sm btn--danger"
+                onClick={handleConnectWallet}
+                disabled={wallet.status === "CONNECTING" || wallet.status === "DETECTING"}
+              >
+                Try again
+              </button>
+            </div>
+          </div>
+        )}
+
+        {renderPage()}
+      </main>
+
+      <footer className="footer">
+        <span>Pactra v0.6.0 on Midnight Preprod</span>
+        <span className="footer-spacer" />
+        <a href="#/terms">Terms of Service</a>
+        <a href="#/privacy-policy">Privacy Policy</a>
+        <a href="https://github.com/Kalpesh-ops/agent-commerce-midnight" target="_blank" rel="noreferrer">
+          Source
+        </a>
+        <button className="linkbtn" onClick={() => setIsActivityOpen((v) => !v)}>
+          Activity log
+        </button>
+        <button className="linkbtn" onClick={() => setIsFeedbackOpen(true)}>
+          Feedback
+        </button>
+      </footer>
+
+      <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} onLog={addLog} />
+
+      {isActivityOpen && (
+        <ActivityDrawer entries={logs} onClose={() => setIsActivityOpen(false)} onClear={() => setLogs([])} />
+      )}
     </div>
   );
 };

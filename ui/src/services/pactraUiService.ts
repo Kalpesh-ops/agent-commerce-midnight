@@ -242,6 +242,10 @@ class PactraUiService {
 
   public disputeProcurement(procurementId: string, reason: string): DisputeRecord {
     const record = this.procurementEngine.getProcurement(procurementId);
+    if (record?.status === "DISPUTED") {
+      // Disputing twice would release the same reservation twice and inflate the agent's budget.
+      throw new Error(`Purchase ${procurementId} is already disputed.`);
+    }
     if (record) {
       record.status = "DISPUTED";
       record.failureReason = reason;

@@ -1,6 +1,7 @@
 import React from "react";
 import { WalletState } from "../services/wallet";
 import { MidnightNetworkId } from "../types/midnight";
+import { Brandmark, Tag, shortHash } from "./ui";
 
 interface HeaderProps {
   wallet: WalletState;
@@ -9,10 +10,8 @@ interface HeaderProps {
   onConnect: () => void;
   onDisconnect: () => void;
   onNetworkChange: (net: MidnightNetworkId) => void;
-  onModeToggle: (mode: "live" | "demo") => void;
-  onContractAddressChange: (addr: string) => void;
-  onOpenGuide?: () => void;
-  onOpenFeedback?: () => void;
+  activityCount: number;
+  onToggleActivity: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,237 +21,87 @@ export const Header: React.FC<HeaderProps> = ({
   onConnect,
   onDisconnect,
   onNetworkChange,
-  onModeToggle,
-  onOpenGuide,
-  onOpenFeedback,
+  activityCount,
+  onToggleActivity,
 }) => {
   const isConnecting = wallet.status === "CONNECTING";
   const isDetecting = wallet.status === "DETECTING";
+  const hasFailed = wallet.status === "FAILED" || wallet.status === "REJECTED" || wallet.status === "TIMEOUT";
+
+  const modeTag = isLiveMode ? (
+    <Tag tone="ok" id="badge-live-preprod" title="Signed transactions go to Midnight Preprod">
+      Live
+    </Tag>
+  ) : wallet.isConnected && wallet.networkId === "preprod" && !contractAddress ? (
+    <Tag tone="seal" id="badge-preprod-ready" title="Wallet is ready. Deploy or attach a contract on the Escrow page.">
+      No contract yet
+    </Tag>
+  ) : (
+    <Tag tone="warn" id="badge-demo-mode" title="Actions run against a local simulation. Nothing is sent on-chain.">
+      Simulation
+    </Tag>
+  );
 
   return (
-    <header className="app-header">
-      <div className="brand-section">
-        <div className="brand-logo-icon">🌌</div>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <h1 className="brand-title">Pactra</h1>
-            <span
-              style={{
-                background: "rgba(255, 170, 0, 0.15)",
-                color: "var(--amber)",
-                border: "1px solid rgba(255, 170, 0, 0.3)",
-                borderRadius: "4px",
-                fontSize: "10px",
-                fontWeight: 800,
-                padding: "2px 6px",
-                letterSpacing: "0.5px",
-              }}
-            >
-              PREPROD TESTNET
-            </span>
-            <span
-              style={{
-                fontSize: "10px",
-                color: "var(--text-dim)",
-                fontFamily: "var(--font-mono)",
-                background: "rgba(255, 255, 255, 0.04)",
-                padding: "2px 6px",
-                borderRadius: "4px",
-              }}
-            >
-              v0.6.0-eclipse
-            </span>
-          </div>
-          <p className="brand-subtitle">Autonomous Agent Commerce & Escrow Protocol • Preprod MVP</p>
-        </div>
-      </div>
+    <header className="topbar">
+      <a className="brand" href="#/start" aria-label="Pactra home">
+        <Brandmark size={26} />
+        <span className="brand-word">pactra</span>
+        <span className="brand-net">Preprod</span>
+      </a>
 
-      <div className="header-actions">
-        {onOpenGuide && (
-          <button
-            className="btn-secondary"
-            onClick={onOpenGuide}
-            style={{ padding: "6px 12px", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}
-            title="Open Pactra user guide & architecture primer"
-          >
-            <span>📖</span> Guide
-          </button>
-        )}
-        {onOpenFeedback && (
-          <button
-            className="btn-secondary"
-            onClick={onOpenFeedback}
-            style={{ padding: "6px 12px", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}
-            title="Submit tester feedback & bug reports"
-          >
-            <span>💬</span> Feedback
-          </button>
-        )}
-        {/* Visual Badge: strictly distinguishing Live Preprod from Demo */}
-        {isLiveMode ? (
-          <div
-            id="badge-live-preprod"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "6px 14px",
-              background: "rgba(0, 230, 153, 0.12)",
-              border: "1px solid var(--emerald)",
-              borderRadius: "var(--radius-full)",
-              fontSize: "12px",
-              fontWeight: 700,
-              color: "var(--emerald)",
-            }}
-          >
-            <span
-              style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                background: "var(--emerald)",
-                boxShadow: "0 0 10px var(--emerald)",
-              }}
-            ></span>
-            LIVE PREPROD ON-CHAIN
-          </div>
-        ) : wallet.isConnected && wallet.networkId === "preprod" && !contractAddress ? (
-          <div
-            id="badge-preprod-ready"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "6px 14px",
-              background: "rgba(0, 212, 255, 0.12)",
-              border: "1px solid var(--cyan)",
-              borderRadius: "var(--radius-full)",
-              fontSize: "12px",
-              fontWeight: 700,
-              color: "var(--cyan)",
-            }}
-          >
-            <span>🔗</span>
-            PREPROD (AWAITING DEPLOYMENT)
-          </div>
-        ) : (
-          <div
-            id="badge-demo-mode"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "6px 14px",
-              background: "rgba(255, 170, 0, 0.12)",
-              border: "1px solid var(--amber)",
-              borderRadius: "var(--radius-full)",
-              fontSize: "12px",
-              fontWeight: 700,
-              color: "var(--amber)",
-            }}
-          >
-            <span>⚠️</span>
-            OFF-CHAIN DEMO / SIMULATION
-          </div>
-        )}
+      <span className="topbar-spacer" />
 
-        {/* Network selector */}
-        <div className="network-badge">
-          <span className="network-indicator-dot"></span>
+      <div className="topbar-group">
+        <span className="hide-sm">{modeTag}</span>
+
+        <label className="hide-sm">
+          <span className="sr-only">Target network</span>
           <select
+            className="select"
+            style={{ minHeight: 36, width: "auto", fontSize: 13 }}
             value={wallet.networkId}
-            disabled={isConnecting}
+            disabled={isConnecting || isDetecting}
             onChange={(e) => onNetworkChange(e.target.value as MidnightNetworkId)}
-            style={{
-              background: "transparent",
-              color: "inherit",
-              border: "none",
-              fontFamily: "inherit",
-              fontSize: "inherit",
-              fontWeight: "inherit",
-              cursor: isConnecting ? "not-allowed" : "pointer",
-              outline: "none",
-            }}
           >
-            <option value="preprod" style={{ background: "#0d1226", color: "#f0f3ff" }}>
-              Preprod Testnet
-            </option>
-            <option value="preview" style={{ background: "#0d1226", color: "#f0f3ff" }}>
-              Preview Testnet
-            </option>
-            <option value="undeployed" style={{ background: "#0d1226", color: "#f0f3ff" }}>
-              Undeployed (Local)
-            </option>
+            <option value="preprod">Preprod testnet</option>
+            <option value="preview">Preview testnet</option>
+            <option value="undeployed">Local (undeployed)</option>
           </select>
-        </div>
+        </label>
 
-        {/* Deterministic Wallet Connection Controls */}
+        <button className="btn btn--sm btn--quiet hide-sm" onClick={onToggleActivity} aria-label={`Activity log, ${activityCount} entries`}>
+          Activity <span className="faint">{activityCount}</span>
+        </button>
+
         {wallet.isConnected ? (
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-            <button
-              id="wallet-connected-btn"
-              className="btn-secondary"
-              title={`Shielded Coin PK: ${wallet.coinPublicKey || "N/A"}\nDevice: ${wallet.deviceProfile?.os || "PC"} ${wallet.deviceProfile?.deviceType || "Desktop"} (${wallet.deviceProfile?.browser || "Browser"})\nStatus: Whitelisted Session Active (Persists across reloads)\nClick to disconnect`}
-              onClick={onDisconnect}
-              style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
-            >
-              <span style={{ color: "#00e699" }}>●</span>
-              {wallet.coinPublicKey
-                ? `${wallet.coinPublicKey.slice(0, 8)}...${wallet.coinPublicKey.slice(-6)}`
-                : "Lace Connected"}
-              <span
-                style={{
-                  fontSize: "10px",
-                  background: "rgba(0, 230, 153, 0.15)",
-                  color: "#00e699",
-                  border: "1px solid rgba(0, 230, 153, 0.3)",
-                  padding: "1px 6px",
-                  borderRadius: "10px",
-                  fontWeight: 600,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "3px",
-                }}
-                title="Whitelisted device: session persists across reloads"
-              >
-                🔒 {wallet.isRestoredSession ? "Auto-Restored" : "Trusted Device"}
-              </span>
-            </button>
-          </div>
-        ) : isConnecting ? (
           <button
-            id="connect-wallet-btn"
-            className="btn-primary"
-            disabled
-            style={{ opacity: 0.75, cursor: "not-allowed" }}
+            id="wallet-connected-btn"
+            className="btn btn--sm"
+            onClick={onDisconnect}
+            title={`Shielded coin key: ${wallet.coinPublicKey || "n/a"}\n${
+              wallet.isRestoredSession ? "Session restored on this trusted device." : "Trusted device session."
+            }\nClick to disconnect.`}
           >
-            <span>⏳</span> Authorizing in Lace...
+            <span className="mark mark--fill c-ok" aria-hidden="true" />
+            <span className="hash">{wallet.coinPublicKey ? shortHash(wallet.coinPublicKey, 6, 4) : "Lace connected"}</span>
+          </button>
+        ) : isConnecting ? (
+          <button id="connect-wallet-btn" className="btn btn--sm btn--primary" disabled>
+            Approve in Lace...
           </button>
         ) : isDetecting ? (
-          <button
-            id="connect-wallet-btn"
-            className="btn-secondary"
-            disabled
-            style={{ opacity: 0.7, cursor: "wait" }}
-          >
-            <span>🔍</span> Detecting Lace...
-          </button>
-        ) : wallet.status === "FAILED" || wallet.status === "REJECTED" || wallet.status === "TIMEOUT" ? (
-          <button
-            id="connect-wallet-btn"
-            className="btn-primary"
-            onClick={onConnect}
-            title={wallet.error || "Retry connection"}
-          >
-            <span>🔄</span> Retry Connect
+          <button id="connect-wallet-btn" className="btn btn--sm" disabled>
+            Looking for Lace...
           </button>
         ) : (
           <button
             id="connect-wallet-btn"
-            className="btn-primary"
+            className="btn btn--sm btn--primary"
             onClick={onConnect}
+            title={hasFailed ? wallet.error || "Retry connection" : "Connect the Midnight Lace wallet"}
           >
-            <span>🔌</span> Connect Lace Wallet
+            {hasFailed ? "Retry wallet" : "Connect wallet"}
           </button>
         )}
       </div>

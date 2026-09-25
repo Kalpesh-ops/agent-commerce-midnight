@@ -1,138 +1,135 @@
 import React from "react";
 import { EscrowContractData } from "../services/escrowService";
+import { Hash, Skeleton, Tag } from "./ui";
 
 interface TaskDetailsCardProps {
   data: EscrowContractData;
+  isSyncing?: boolean;
   onRefreshFromIndexer?: () => void;
 }
 
-export const TaskDetailsCard: React.FC<TaskDetailsCardProps> = ({
-  data,
-  onRefreshFromIndexer,
-}) => {
+const STATE_LABEL: Record<string, string> = {
+  UNINITIALIZED: "Not started",
+  CREATED: "Created",
+  FUNDED: "Funded",
+  ACTIVE: "Active",
+  COMPLETION_PENDING: "Delivered",
+  COMPLETED: "Settled",
+  REFUNDED: "Refunded",
+};
+
+const STATE_TONE: Record<string, "ok" | "warn" | "bad" | "seal" | "plain"> = {
+  UNINITIALIZED: "plain",
+  CREATED: "plain",
+  FUNDED: "seal",
+  ACTIVE: "seal",
+  COMPLETION_PENDING: "warn",
+  COMPLETED: "ok",
+  REFUNDED: "bad",
+};
+
+export const TaskDetailsCard: React.FC<TaskDetailsCardProps> = ({ data, isSyncing, onRefreshFromIndexer }) => {
+  const settlementTone =
+    data.settlementState === "SETTLED_SUCCESS" ? "c-ok" : data.settlementState === "SETTLED_REFUND" ? "c-bad" : "faint";
+
   return (
-    <div className="panel-card">
-      <div className="panel-header">
+    <section className="sheet" aria-labelledby="ledger-title">
+      <div className="sheet-head">
         <div>
-          <h3>Observable Ledger State</h3>
-          <div style={{ fontSize: "12px", color: data.isSimulated ? "var(--amber)" : "var(--emerald)", marginTop: "2px" }}>
-            {data.isSimulated ? "● Source: Local Testbed Simulation" : "● Source: Live Midnight Preprod Indexer"}
+          <h3 className="sub" id="ledger-title">
+            Ledger
+          </h3>
+          <div className="tiny faint">
+            {data.contractAddress && !data.isSimulated ? "From the Midnight Preprod indexer" : "From the local simulation"}
           </div>
         </div>
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <span className={`state-pill ${data.taskState}`}>{data.taskState}</span>
+        <div className="row">
+          <Tag tone={STATE_TONE[data.taskState]}>{STATE_LABEL[data.taskState]}</Tag>
           {onRefreshFromIndexer && (
-            <button
-              className="btn-secondary"
-              style={{ padding: "4px 8px", fontSize: "11px" }}
-              onClick={onRefreshFromIndexer}
-              title="Query latest state from Midnight Preprod Indexer"
-            >
-              🔄 Refresh Indexer
+            <button className="btn btn--sm btn--quiet" onClick={onRefreshFromIndexer} disabled={isSyncing}>
+              {isSyncing ? "Syncing..." : "Sync"}
             </button>
           )}
         </div>
       </div>
 
-      <div className="data-row">
-        <span className="data-label">Contract Address</span>
-        <span className="data-value highlight-cyan" title={data.contractAddress || "Not deployed yet"}>
-          {data.contractAddress
-            ? `${data.contractAddress.slice(0, 10)}...${data.contractAddress.slice(-8)}`
-            : "No Contract Deployed"}
-        </span>
-      </div>
-
-      <div className="data-row">
-        <span className="data-label">Task Identifier</span>
-        <span className="data-value" title={data.taskId}>
-          {data.taskId.length > 20 ? `${data.taskId.slice(0, 10)}...${data.taskId.slice(-8)}` : data.taskId}
-        </span>
-      </div>
-
-      <div className="data-row">
-        <span className="data-label">Maximum Task Budget</span>
-        <span className="data-value highlight-cyan">{data.maxBudget} DUST/tNIGHT</span>
-      </div>
-
-      <div className="data-row">
-        <span className="data-label">Escrowed Balance</span>
-        <span className="data-value highlight-emerald">{data.escrowedAmount} DUST/tNIGHT</span>
-      </div>
-
-      <div className="data-row">
-        <span className="data-label">Creator Commitment</span>
-        <span className="data-value" title={data.creatorCommitment}>
-          {data.creatorCommitment.length > 20
-            ? `${data.creatorCommitment.slice(0, 10)}...${data.creatorCommitment.slice(-8)}`
-            : data.creatorCommitment}
-        </span>
-      </div>
-
-      <div className="data-row">
-        <span className="data-label">Authorized Agent Commitment</span>
-        <span className="data-value" title={data.agentCommitment}>
-          {data.agentCommitment.length > 20
-            ? `${data.agentCommitment.slice(0, 10)}...${data.agentCommitment.slice(-8)}`
-            : data.agentCommitment}
-        </span>
-      </div>
-
-      <div className="data-row">
-        <span className="data-label">Objective Condition Hash</span>
-        <span className="data-value" title={data.conditionHash}>
-          {data.conditionHash.length > 20
-            ? `${data.conditionHash.slice(0, 10)}...${data.conditionHash.slice(-8)}`
-            : data.conditionHash}
-        </span>
-      </div>
-
-      <div className="data-row">
-        <span className="data-label">Completion Evidence Hash</span>
-        <span className="data-value" title={data.completionHash}>
-          {data.completionHash.length > 20
-            ? `${data.completionHash.slice(0, 10)}...${data.completionHash.slice(-8)}`
-            : data.completionHash}
-        </span>
-      </div>
-
-      <div className="data-row">
-        <span className="data-label">Settlement Status</span>
-        <span
-          className="data-value"
-          style={{
-            color:
-              data.settlementState === "SETTLED_SUCCESS"
-                ? "var(--emerald)"
-                : data.settlementState === "SETTLED_REFUND"
-                ? "var(--crimson)"
-                : "var(--text-muted)",
-          }}
-        >
-          {data.settlementState}
-        </span>
-      </div>
-
-      {data.lastTxHash && (
-        <div className="data-row">
-          <span className="data-label">Confirmed On-Chain Tx</span>
-          <span className="data-value highlight-emerald" title={data.lastTxHash}>
-            {data.lastTxHash.slice(0, 12)}...{data.lastTxHash.slice(-8)}
-          </span>
+      <div className="strip" style={{ border: 0, borderBottom: "1px solid var(--rule)" }}>
+        <div>
+          <div className="strip-label">Held in escrow</div>
+          {isSyncing ? (
+            <Skeleton lines={1} widths={["60%"]} />
+          ) : (
+            <div className="figure">
+              {data.escrowedAmount}
+              <span className="figure-unit">DUST</span>
+            </div>
+          )}
         </div>
-      )}
-
-      {data.confirmedBlock && (
-        <div className="data-row">
-          <span className="data-label">Block Height</span>
-          <span className="data-value">Block #{data.confirmedBlock}</span>
+        <div>
+          <div className="strip-label">Budget ceiling</div>
+          {isSyncing ? (
+            <Skeleton lines={1} widths={["50%"]} />
+          ) : (
+            <div className="figure">
+              {data.maxBudget}
+              <span className="figure-unit">DUST</span>
+            </div>
+          )}
         </div>
-      )}
-
-      <div className="data-row">
-        <span className="data-label">Sequence Counter</span>
-        <span className="data-value">#{data.sequence}</span>
       </div>
-    </div>
+
+      <div className="sheet-body" style={{ paddingTop: 8, paddingBottom: 8 }}>
+        {isSyncing ? (
+          <div style={{ padding: "12px 0" }}>
+            <Skeleton lines={6} />
+          </div>
+        ) : (
+          <dl className="kv">
+            <dt>Contract</dt>
+            <dd>
+              <Hash value={data.contractAddress} empty="Not deployed" />
+            </dd>
+            <dt>Task id</dt>
+            <dd>
+              <Hash value={data.taskId} />
+            </dd>
+            <dt>Creator commitment</dt>
+            <dd>
+              <Hash value={data.creatorCommitment} />
+            </dd>
+            <dt>Agent commitment</dt>
+            <dd>
+              <Hash value={data.agentCommitment} />
+            </dd>
+            <dt>Condition hash</dt>
+            <dd>
+              <Hash value={data.conditionHash} />
+            </dd>
+            <dt>Evidence hash</dt>
+            <dd>
+              <Hash value={data.completionHash} />
+            </dd>
+            <dt>Settlement</dt>
+            <dd className={settlementTone}>{data.settlementState.replace(/_/g, " ").toLowerCase()}</dd>
+            {data.lastTxHash && (
+              <>
+                <dt>Last transaction</dt>
+                <dd>
+                  <Hash value={data.lastTxHash} />
+                </dd>
+              </>
+            )}
+            {data.confirmedBlock && (
+              <>
+                <dt>Block</dt>
+                <dd className="hash">#{data.confirmedBlock}</dd>
+              </>
+            )}
+            <dt>Sequence</dt>
+            <dd className="hash">#{data.sequence}</dd>
+          </dl>
+        )}
+      </div>
+    </section>
   );
 };
